@@ -1,0 +1,19 @@
+*.iml
+.gradle/
+.kotlin/
+local.properties
+.idea/
+build/
+build-out/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.jks
+*.keystore
+# decompiled host APK (jadx output)
+pixiv_6.192.1/
+pixiv_6.192.1.apk
+# local development notes
+MEMORY.md

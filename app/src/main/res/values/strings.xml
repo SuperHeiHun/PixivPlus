@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PixivLocalPlus</string>
+    <string name="xposed_description">为 Pixiv 提供本地浏览历史、内容过滤、本地 Premium 覆盖与广告移除。设置入口内置于宿主设置页。</string>
+</resources>
