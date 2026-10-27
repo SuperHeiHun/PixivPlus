@@ -48,9 +48,10 @@ function Invoke-Checked([string]$Command, [string[]]$Arguments, [string]$What) {
     Write-Host "    $Command $($Arguments -join ' ')" -ForegroundColor DarkGray
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & $Command @Arguments
+    $output = & $Command @Arguments 2>&1
     $code = $LASTEXITCODE
     $ErrorActionPreference = $previous
+    $output | ForEach-Object { Write-Host $_ }
     if ($code -ne 0) {
         throw "$What 失败（退出码 $code）"
     }
