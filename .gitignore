@@ -19,3 +19,5 @@ pixiv_6.192.1.apk
 MEMORY.md
 # local build logs
 *.log
+# local helper scripts (kept out of the public repository)
+scripts/
