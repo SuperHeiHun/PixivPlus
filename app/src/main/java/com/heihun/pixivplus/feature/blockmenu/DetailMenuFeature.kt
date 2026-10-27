@@ -13,6 +13,7 @@ import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.config.RuleAppender
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.util.CurrentWorkHook
+import com.heihun.pixivplus.core.util.DetailPagerResolver
 import com.heihun.pixivplus.core.util.EntityReader
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
@@ -66,16 +67,48 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
     override fun hook(host: Host) {
         hookToolbarListener(host)
         hookCaptionView(host)
+        hookPageChange(host)
         for (className in detailActivities) {
             hookActivityLifecycle(host, className)
         }
         ModuleLog.i(displayName, "detail quick-block menu hooks installed")
     }
 
+    private fun hookPageChange(host: Host) {
+        val clazz = listOf("xd0", "defpackage.xd0")
+            .asSequence()
+            .mapNotNull { ReflectUtil.loadClass(host.classLoader, it) }
+            .firstOrNull()
+        if (clazz == null) {
+            ModuleLog.w(displayName, "detail base activity class not found for page hook")
+            return
+        }
+        val method = ReflectUtil.findMethod(
+            clazz,
+            "onPageSelected",
+            Int::class.javaPrimitiveType ?: return
+        ) ?: return
+        if (!hookedMethods.add(method)) return
+        try {
+            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val activity = currentActivity ?: return
+                    val decor = activity.window?.decorView ?: return
+                    decor.postDelayed({ refreshMenuItems() }, 200L)
+                    decor.postDelayed({ refreshMenuItems() }, 700L)
+                }
+            })
+            ModuleLog.i(displayName, "detail page change hook installed")
+        } catch (t: Throwable) {
+            ModuleLog.w(displayName, "detail page change hook failed", t)
+        }
+    }
+
     private fun hookCaptionView(host: Host) {
         val installed = CurrentWorkHook.install(host, displayName) { entity, id, defaultType ->
             lastCaptionCaptureAt = System.currentTimeMillis()
             capture(entity, id, defaultType)
+            refreshMenuItems()
         }
         ModuleLog.i(displayName, "caption view hooks installed: $installed")
     }
@@ -101,6 +134,48 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
             }
         } catch (t: Throwable) {
             ModuleLog.w(displayName, "capture failed", t)
+        }
+    }
+
+    private fun resolveSnapshot(): com.heihun.pixivplus.core.WorkSnapshot? {
+        val activity = currentActivity
+        if (activity != null) {
+            try {
+                val entity = DetailPagerResolver.currentItem(activity)
+                if (entity != null) {
+                    val idMethod = ReflectUtil.findMethod(entity.javaClass, "getId")
+                    val id = ReflectUtil.invoke(entity, idMethod) as? Long
+                    if (id != null) {
+                        val tags = EntityReader.tags(entity)
+                        ModuleLog.d(
+                            displayName,
+                            "resolve from pager id=$id tags=${tags.size} title=${EntityReader.title(entity)}"
+                        )
+                        capture(entity, id, "ILLUST")
+                    }
+                } else {
+                    ModuleLog.d(displayName, "resolve from pager failed, fallback to context")
+                }
+            } catch (t: Throwable) {
+                ModuleLog.w(displayName, "resolve current work failed", t)
+            }
+        }
+        return WorkContext.current
+    }
+
+    private fun refreshMenuItems() {
+        val activity = currentActivity ?: return
+        try {
+            var restored = 0
+            for (toolbar in findToolbars(activity.window?.decorView ?: return)) {
+                val menu = readMenu(toolbar) ?: continue
+                if (addMenuItems(menu, toolbar)) restored++
+            }
+            if (restored > 0) {
+                ModuleLog.i(displayName, "quick-block menu items restored on $restored toolbar(s)")
+            }
+        } catch (t: Throwable) {
+            ModuleLog.w(displayName, "refresh menu items failed", t)
         }
     }
 
@@ -142,7 +217,12 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     val item = param.args?.firstOrNull() as? MenuItem ?: return
                     if (item.itemId == ID_BLOCK_BY_TAG || item.itemId == ID_BLOCK_AUTHOR || item.itemId == ID_BLOCK_TITLE) {
-                        ModuleLog.i(displayName, "quick-block item clicked id=${item.itemId} title=${item.title}")
+                        val snapshot = resolveSnapshot()
+                        ModuleLog.i(
+                            displayName,
+                            "quick-block item clicked id=${item.itemId} work=${snapshot?.id} " +
+                                "title=${snapshot?.title} author=${snapshot?.authorName} tags=${snapshot?.tags?.size}"
+                        )
                     }
                     when (item.itemId) {
                         ID_BLOCK_BY_TAG -> {
@@ -197,12 +277,10 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
     private val pollTask = object : Runnable {
         override fun run() {
             val activity = currentActivity ?: return
-            if (menuReady) return
             try {
                 injectInto(activity)
             } catch (_: Throwable) {
             }
-            if (menuReady) return
             activity.window?.decorView?.postDelayed(this, POLL_INTERVAL_MS)
         }
     }
@@ -221,10 +299,12 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
     private fun injectInto(activity: Activity): Boolean {
         return try {
             captureFromViews(activity)
-            val toolbar = findToolbar(activity.window?.decorView ?: return false) ?: return false
-            val menu = readMenu(toolbar) ?: return false
-            addMenuItems(menu)
-            menuReady = true
+            var injected = 0
+            for (toolbar in findToolbars(activity.window?.decorView ?: return false)) {
+                val menu = readMenu(toolbar) ?: continue
+                if (addMenuItems(menu, toolbar)) injected++
+            }
+            menuReady = injected > 0 || menuReady
             true
         } catch (t: Throwable) {
             ModuleLog.w(displayName, "menu injection failed", t)
@@ -254,6 +334,7 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
             }
             val idMethod = ReflectUtil.findMethod(entity.javaClass, "getId") ?: return
             val id = ReflectUtil.invoke(entity, idMethod) as? Long ?: return
+            if (!DetailPagerResolver.isCurrentWork(activity, id)) return
             capture(entity, id, "ILLUST")
         } catch (_: Throwable) {
         }
@@ -271,16 +352,23 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
         return null
     }
 
-    private fun findToolbar(root: View): View? {
-        if (hasMenuAccessor(root)) return root
+    private fun findToolbars(root: View): List<View> {
+        val result = ArrayList<View>()
+        collectToolbars(root, result)
+        return result
+    }
+
+    private fun collectToolbars(root: View, out: MutableList<View>) {
+        if (hasMenuAccessor(root)) {
+            out.add(root)
+            return
+        }
         if (root is ViewGroup) {
             for (index in 0 until root.childCount) {
                 val child = root.getChildAt(index) ?: continue
-                val found = findToolbar(child) ?: continue
-                return found
+                collectToolbars(child, out)
             }
         }
-        return null
     }
 
     private fun hasMenuAccessor(view: View): Boolean {
@@ -309,7 +397,7 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
         return ReflectUtil.invoke(toolbar, cached as Method) as? Menu
     }
 
-    private fun addMenuItems(menu: Menu): Boolean {
+    private fun addMenuItems(menu: Menu, toolbar: View? = null): Boolean {
         var changed = false
         if (menu.findItem(ID_BLOCK_BY_TAG) == null) {
             menu.add(Menu.NONE, ID_BLOCK_BY_TAG, Menu.NONE, "按Tag屏蔽")
@@ -324,14 +412,15 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
             changed = true
         }
         if (changed) {
-            ModuleLog.i(displayName, "quick-block menu items added (total=${menu.size()})")
+            val marker = toolbar?.let { "@${Integer.toHexString(System.identityHashCode(it))}" }.orEmpty()
+            ModuleLog.i(displayName, "quick-block menu items added$marker (total=${menu.size()})")
         }
         return changed
     }
 
     private fun showTagDialog() {
         val activity = currentActivity
-        val tags = WorkContext.current?.tags.orEmpty()
+        val tags = resolveSnapshot()?.tags.orEmpty()
         ModuleLog.i(displayName, "showTagDialog activity=${activity != null} tags=${tags.size}")
         if (activity == null) {
             ModuleLog.w(displayName, "no activity for dialog")
@@ -370,7 +459,7 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
 
     private fun blockAuthor() {
         val activity = currentActivity ?: return
-        val snapshot = WorkContext.current
+        val snapshot = resolveSnapshot()
         val author = snapshot?.authorName?.takeIf { it.isNotEmpty() }
             ?: snapshot?.authorAccount?.takeIf { it.isNotEmpty() }
         if (author.isNullOrEmpty()) {
@@ -384,7 +473,7 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
 
     private fun blockTitle() {
         val activity = currentActivity ?: return
-        val title = WorkContext.current?.title?.takeIf { it.isNotEmpty() }
+        val title = resolveSnapshot()?.title?.takeIf { it.isNotEmpty() }
         if (title.isNullOrEmpty()) {
             toast(activity, "未获取到当前标题")
             return

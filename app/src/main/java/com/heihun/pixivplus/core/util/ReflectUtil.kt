@@ -105,6 +105,16 @@ object ReflectUtil {
         }
     }
 
+    fun invokeStatic(method: Method?, vararg args: Any?): Any? {
+        if (method == null) return null
+        return try {
+            method.isAccessible = true
+            method.invoke(null, *args)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     fun loadClass(classLoader: ClassLoader?, name: String): Class<*>? {
         if (classLoader == null) return null
         return try {

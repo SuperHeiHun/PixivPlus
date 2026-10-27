@@ -17,3 +17,5 @@ pixiv_6.192.1/
 pixiv_6.192.1.apk
 # local development notes
 MEMORY.md
+# local build logs
+*.log

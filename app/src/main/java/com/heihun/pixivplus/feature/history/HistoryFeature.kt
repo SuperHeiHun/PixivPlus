@@ -11,6 +11,8 @@ import com.heihun.pixivplus.core.net.ApiHooks
 import com.heihun.pixivplus.core.net.PageImageCodec
 import com.heihun.pixivplus.core.net.PayloadProcessor
 import com.heihun.pixivplus.core.util.CurrentWorkHook
+import com.heihun.pixivplus.core.util.DetailActivityTracker
+import com.heihun.pixivplus.core.util.DetailPagerResolver
 import com.heihun.pixivplus.core.util.EntityReader
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
@@ -106,10 +108,14 @@ class HistoryFeature : ConfigurableFeature("history", "本地浏览历史", Conf
                 override fun onActivityCreated(activity: Activity, savedInstanceState: android.os.Bundle?) {}
                 override fun onActivityStarted(activity: Activity) {}
                 override fun onActivityResumed(activity: Activity) {
-                    if (isDetailActivity(activity)) detailDepth.incrementAndGet()
+                    if (isDetailActivity(activity)) {
+                        detailDepth.incrementAndGet()
+                        DetailActivityTracker.set(activity)
+                    }
                 }
                 override fun onActivityPaused(activity: Activity) {
                     if (isDetailActivity(activity)) {
+                        DetailActivityTracker.clear()
                         val remaining = detailDepth.updateAndGet { value -> if (value > 0) value - 1 else 0 }
                         if (remaining == 0) com.heihun.pixivplus.core.WorkContext.clear()
                     }
@@ -246,6 +252,10 @@ class HistoryFeature : ConfigurableFeature("history", "本地浏览历史", Conf
         if (isPaused()) return
         val id = item.optLong("id")
         if (id <= 0) return
+        if (!isVisibleWork(id)) {
+            ModuleLog.d(displayName, "skip adjacent detail payload id=$id")
+            return
+        }
         val type = normalizeType(rawType)
         enriched[key(type, id)] = System.currentTimeMillis()
         ModuleLog.i(displayName, "detail payload captured: $type id=$id title=${item.optString("title")}")
@@ -312,6 +322,11 @@ class HistoryFeature : ConfigurableFeature("history", "本地浏览历史", Conf
             if (name.isNotEmpty()) names.add(name)
         }
         return if (names.isEmpty()) null else names.joinToString(",")
+    }
+
+    private fun isVisibleWork(id: Long): Boolean {
+        val activity = DetailActivityTracker.get() ?: return true
+        return DetailPagerResolver.isCurrentWork(activity, id)
     }
 
     private fun normalizeType(raw: String): String {

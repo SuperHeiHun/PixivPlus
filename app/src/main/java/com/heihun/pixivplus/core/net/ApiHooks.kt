@@ -4,6 +4,7 @@ import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.util.ReflectUtil
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import java.io.Reader
 import java.io.StringReader
@@ -12,6 +13,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 object ApiHooks {
 
     private const val RESPONSE_BODY_CLASS = "okhttp3.ResponseBody"
+    private const val SERVER_INTERCEPTOR_CLASS = "okhttp3.internal.http.CallServerInterceptor"
+    private const val SEARCH_PATH = "/v1/search"
     private const val TRACE_LIMIT = 40
 
     private val installed = AtomicBoolean(false)
@@ -29,7 +32,43 @@ object ApiHooks {
         hookCharStream(clazz)
         hookString(clazz)
         hookBytes(clazz)
+        hookSearchTrace(host)
+        PopularSearchRewrite.install(host)
         ModuleLog.i("ApiHooks", "response body hooks installed")
+    }
+
+    private fun hookSearchTrace(host: Host) {
+        val clazz = ReflectUtil.loadClass(host.classLoader, SERVER_INTERCEPTOR_CLASS) ?: return
+        val method = ReflectUtil.findMethods(clazz, "intercept")
+            .firstOrNull { it.parameterCount == 1 } ?: return
+        try {
+            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val chain = param.args?.firstOrNull() ?: return
+                    val request = ReflectUtil.invoke(chain, ReflectUtil.findMethod(chain.javaClass, "request")) ?: return
+                    val url = ReflectUtil.invoke(request, ReflectUtil.findMethod(request.javaClass, "url")) ?: return
+                    val text = ReflectUtil.invoke(url, ReflectUtil.findMethod(url.javaClass, "toString")) as? String ?: return
+                    if (!text.contains(SEARCH_PATH)) return
+                    ModuleLog.d("ApiHooks", "search request: $text")
+                }
+
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val response = param.result ?: return
+                    val code = ReflectUtil.invoke(response, ReflectUtil.findMethod(response.javaClass, "code"))
+                    val request = ReflectUtil.invoke(response, ReflectUtil.findMethod(response.javaClass, "request"))
+                    val url = request?.let {
+                        ReflectUtil.invoke(it, ReflectUtil.findMethod(it.javaClass, "url"))
+                    }
+                    val text = url?.let {
+                        ReflectUtil.invoke(it, ReflectUtil.findMethod(it.javaClass, "toString")) as? String
+                    } ?: return
+                    if (!text.contains(SEARCH_PATH)) return
+                    ModuleLog.d("ApiHooks", "search response: code=$code url=$text")
+                }
+            })
+        } catch (t: Throwable) {
+            ModuleLog.w("ApiHooks", "hook search trace failed", t)
+        }
     }
 
     private fun trace(counter: java.util.concurrent.atomic.AtomicInteger, kind: String, text: String) {
