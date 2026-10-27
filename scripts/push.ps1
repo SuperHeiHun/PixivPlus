@@ -46,9 +46,13 @@ function Write-Step([string]$Text) {
 
 function Invoke-Checked([string]$Command, [string[]]$Arguments, [string]$What) {
     Write-Host "    $Command $($Arguments -join ' ')" -ForegroundColor DarkGray
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     & $Command @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "$What 失败（退出码 $LASTEXITCODE）"
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $previous
+    if ($code -ne 0) {
+        throw "$What 失败（退出码 $code）"
     }
 }
 
@@ -83,8 +87,12 @@ if ([string]::IsNullOrWhiteSpace($Proxy)) {
 if (-not $SkipBuild) {
     Write-Step "运行测试与构建"
     $gradleLog = Join-Path (Get-Location) "build.log"
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     cmd /c "gradlew.bat testDebugUnitTest assembleDebug lintDebug assembleRelease > build.log 2>&1"
-    if ($LASTEXITCODE -ne 0) {
+    $gradleCode = $LASTEXITCODE
+    $ErrorActionPreference = $previous
+    if ($gradleCode -ne 0) {
         Get-Content $gradleLog -Tail 40 | ForEach-Object { Write-Host $_ -ForegroundColor Red }
         throw "构建失败，日志见 $gradleLog"
     }
