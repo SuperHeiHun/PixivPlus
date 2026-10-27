@@ -19,7 +19,7 @@
     跳过构建与测试，仅提交并推送。
 
 .PARAMETER Proxy
-    Git 使用的 HTTP 代理，例如 http://127.0.0.1:7890。留空则使用当前网络环境。
+    Git 使用的 HTTP 代理。留空时自动探测本地 127.0.0.1:7890，探测失败则直连。
 
 .PARAMETER Message
     提交信息（默认按版本号自动生成）。
@@ -62,6 +62,22 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = $match.Matches[0].Groups[1].Value
 }
 Write-Host "版本号: $Version" -ForegroundColor Green
+
+# ---------------------------------------------------------------- 代理
+if ([string]::IsNullOrWhiteSpace($Proxy)) {
+    $proxyPort = 7890
+    try {
+        $probe = New-Object System.Net.Sockets.TcpClient
+        $probe.Connect("127.0.0.1", $proxyPort)
+        $probe.Close()
+        $Proxy = "http://127.0.0.1:$proxyPort"
+        Write-Host "使用本地代理: $Proxy" -ForegroundColor Green
+    } catch {
+        Write-Host "未探测到本地代理 $proxyPort，使用直连" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "使用代理: $Proxy" -ForegroundColor Green
+}
 
 # ---------------------------------------------------------------- 构建与测试
 if (-not $SkipBuild) {
