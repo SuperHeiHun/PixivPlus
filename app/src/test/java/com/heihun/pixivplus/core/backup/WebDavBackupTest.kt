@@ -61,6 +61,40 @@ class WebDavBackupTest {
     }
 
     @Test
+    fun `upload creates each custom directory level`() {
+        val requests = Collections.synchronizedList(ArrayList<CapturedRequest>())
+        val server = FakeServer(3) { _, socket ->
+            requests += capture(socket)
+            respond(socket, "201 Created")
+        }
+        try {
+            val name = "pixiv-backup-26-10-29_14-06.json"
+            val payload = """{"format":"pixivplus-backup","version":1}"""
+            val result = WebDavBackup.upload(
+                store = directStore(),
+                host = "127.0.0.1",
+                port = server.port,
+                https = false,
+                username = "alice",
+                password = "s3cret",
+                fileName = name,
+                data = payload.toByteArray(Charsets.UTF_8),
+                directory = "/backup/pixiv/"
+            )
+            server.await()
+
+            assertTrue(result.message, result.ok)
+            assertEquals(3, requests.size)
+            assertTrue(requests[0].head.startsWith("MKCOL /backup/ HTTP/1.1\r\n"))
+            assertTrue(requests[1].head.startsWith("MKCOL /backup/pixiv/ HTTP/1.1\r\n"))
+            assertTrue(requests[2].head.startsWith("PUT /backup/pixiv/$name HTTP/1.1\r\n"))
+            assertEquals(payload, requests[2].body)
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test
     fun `latest sends propfind and selects newest backup`() {
         val requests = Collections.synchronizedList(ArrayList<CapturedRequest>())
         val xml = """
@@ -200,6 +234,18 @@ class WebDavBackupTest {
                 "pixiv-backup-26-10-29_14-05.json"
             )?.toString()
         )
+        assertEquals(
+            "https://dav.example.com:5006/backup/pixiv/",
+            WebDavBackup.folderUrl("dav.example.com", 5006, true, "/backup/pixiv")?.toString()
+        )
+        assertEquals(
+            "http://dav.example.com:8080/",
+            WebDavBackup.folderUrl("dav.example.com", 8080, false, "/")?.toString()
+        )
+        assertEquals("/PixivPlus/", WebDavBackup.normalizeDirectory(""))
+        assertEquals("/backup/pixiv/", WebDavBackup.normalizeDirectory("backup//pixiv/"))
+        assertEquals("/backup/", WebDavBackup.normalizeDirectory("/backup/../backup/"))
+        assertEquals("/", WebDavBackup.normalizeDirectory("/"))
         assertNull(WebDavBackup.folderUrl("", 80, false))
         assertNull(WebDavBackup.folderUrl("host", 0, false))
         assertNull(WebDavBackup.folderUrl("host", 70000, false))

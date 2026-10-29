@@ -90,6 +90,19 @@ object BackupPanel {
         card.addView(
             UiKit.inputRow(
                 activity,
+                "备份目录",
+                configText(ConfigKeys.WEBDAV_DIRECTORY),
+                "默认 /PixivPlus/，可填写 /backup/pixiv 等",
+                singleLine = true
+            ) { value ->
+                putConfig(ConfigKeys.WEBDAV_DIRECTORY, value.trim())
+                refreshLocation(locationRow)
+            }
+        )
+        card.addView(UiKit.divider(activity, 16, 16))
+        card.addView(
+            UiKit.inputRow(
+                activity,
                 "用户名（可选）",
                 configText(ConfigKeys.WEBDAV_USERNAME),
                 "留空表示免认证",
@@ -113,8 +126,8 @@ object BackupPanel {
         card.addView(
             UiKit.paragraph(
                 activity,
-                "备份固定保存在 /PixivPlus/，文件名为 pixiv-backup-yy-MM-dd_HH-mm.json；" +
-                    "网络请求沿用上方的代理设置。"
+                "备份保存在自定义目录（默认 /PixivPlus/），文件名为 " +
+                    "pixiv-backup-yy-MM-dd_HH-mm.json；网络请求沿用上方的代理设置。"
             )
         )
 
@@ -221,7 +234,8 @@ object BackupPanel {
                 username = username,
                 password = password,
                 fileName = name,
-                data = data
+                data = data,
+                directory = endpoint.directory
             )
             runOnUi(activity) { toast(activity, result.message) }
         }, "plp-backup-webdav-up").apply { isDaemon = true }.start()
@@ -244,7 +258,8 @@ object BackupPanel {
                 port = endpoint.port,
                 https = endpoint.https,
                 username = username,
-                password = password
+                password = password,
+                directory = endpoint.directory
             )
             val remote = latest.backup
             if (!latest.ok || remote == null) {
@@ -333,7 +348,12 @@ object BackupPanel {
         return if (port == null) {
             "未设置"
         } else {
-            WebDavBackup.folderUrl(host, port, https)?.toString() ?: "未设置"
+            WebDavBackup.folderUrl(
+                host,
+                port,
+                https,
+                configText(ConfigKeys.WEBDAV_DIRECTORY)
+            )?.toString() ?: "未设置"
         }
     }
 
@@ -353,7 +373,12 @@ object BackupPanel {
             toast(activity, "WebDAV 端口无效（1-65535）")
             return null
         }
-        return Endpoint(host, port, configValue(ConfigKeys.WEBDAV_HTTPS))
+        return Endpoint(
+            host,
+            port,
+            configValue(ConfigKeys.WEBDAV_HTTPS),
+            configText(ConfigKeys.WEBDAV_DIRECTORY)
+        )
     }
 
     private fun localLabel(file: BackupManager.LocalBackup): String {
@@ -427,5 +452,10 @@ object BackupPanel {
         }
     }
 
-    private data class Endpoint(val host: String, val port: Int, val https: Boolean)
+    private data class Endpoint(
+        val host: String,
+        val port: Int,
+        val https: Boolean,
+        val directory: String
+    )
 }

@@ -37,6 +37,9 @@ object ConfigKeys {
 
     val WEBDAV_HTTPS = ConfigKey("webdav_https", false, { it.toString() }, { it.toBoolean() })
 
+    /** WebDAV 备份目录，默认 /PixivPlus/；可自定义为 /backup/pixiv 等。 */
+    val WEBDAV_DIRECTORY = ConfigKey("webdav_directory", "/PixivPlus/", { it }, { it })
+
     val WEBDAV_USERNAME = ConfigKey("webdav_username", "", { it }, { it })
 
     val WEBDAV_PASSWORD = ConfigKey("webdav_password", "", { it }, { it })

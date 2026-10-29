@@ -5,6 +5,7 @@ import com.heihun.pixivplus.core.net.ProxyHttp
 import java.io.ByteArrayInputStream
 import java.net.URL
 import java.net.URLDecoder
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Base64
 import java.util.Locale
@@ -15,12 +16,13 @@ import org.w3c.dom.Element
 /**
  * 通过 WebDAV 上传 / 下载备份文件。
  *
- * 备份固定放在服务器根目录下的 /PixivPlus/，文件名为
- * pixiv-backup-yy-MM-dd_HH-mm.json；网络请求沿用模块的代理设置。
+ * 备份默认放在服务器根目录下的 /PixivPlus/，也可自定义目录；
+ * 文件名为 pixiv-backup-yy-MM-dd_HH-mm.json，网络请求沿用模块的代理设置。
  */
 object WebDavBackup {
 
     const val FOLDER_NAME = "PixivPlus"
+    const val DEFAULT_DIRECTORY = "/$FOLDER_NAME/"
     private const val MAX_DOWNLOAD_CHARS = 32 * 1024 * 1024
     private const val MAX_PROPFIND_CHARS = 4 * 1024 * 1024
     private const val PROPFIND_BODY =
@@ -63,20 +65,60 @@ object WebDavBackup {
         return value
     }
 
-    fun folderPath(): String = "/$FOLDER_NAME/"
+    /**
+     * 规范化 WebDAV 目录：统一使用 / 开头和结尾，折叠重复斜杠并解析 . / ..。
+     * 空值使用默认目录；输入完整 URL 时只取路径部分。
+     */
+    fun normalizeDirectory(raw: String?): String {
+        var value = raw?.trim().orEmpty()
+        if (value.isEmpty()) return DEFAULT_DIRECTORY
+        if (value.contains("://")) {
+            value = try {
+                URL(value).path
+            } catch (_: Throwable) {
+                value.substringAfter("://").substringAfter('/', "")
+            }
+        }
+        value = value.substringBefore('?').substringBefore('#').replace('\\', '/')
+        val segments = ArrayList<String>()
+        for (segment in value.split('/')) {
+            when (segment) {
+                "", "." -> Unit
+                ".." -> if (segments.isNotEmpty()) segments.removeAt(segments.lastIndex)
+                else -> segments += segment
+            }
+        }
+        return if (segments.isEmpty()) "/" else "/" + segments.joinToString("/") + "/"
+    }
 
-    fun folderUrl(host: String, port: Int, https: Boolean): URL? {
-        val normalized = normalizeHost(host) ?: return null
+    fun folderPath(directory: String? = DEFAULT_DIRECTORY): String {
+        return normalizeDirectory(directory)
+    }
+
+    fun folderUrl(
+        host: String,
+        port: Int,
+        https: Boolean,
+        directory: String? = DEFAULT_DIRECTORY
+    ): URL? {
+        val normalizedHost = normalizeHost(host) ?: return null
         if (port !in 1..65535) return null
+        val path = encodePath(normalizeDirectory(directory))
         return try {
-            URL("${if (https) "https" else "http"}://$normalized:$port${folderPath()}")
+            URL("${if (https) "https" else "http"}://$normalizedHost:$port$path")
         } catch (_: Throwable) {
             null
         }
     }
 
-    fun fileUrl(host: String, port: Int, https: Boolean, fileName: String): URL? {
-        val folder = folderUrl(host, port, https) ?: return null
+    fun fileUrl(
+        host: String,
+        port: Int,
+        https: Boolean,
+        fileName: String,
+        directory: String? = DEFAULT_DIRECTORY
+    ): URL? {
+        val folder = folderUrl(host, port, https, directory) ?: return null
         return try {
             URL(folder, fileName)
         } catch (_: Throwable) {
@@ -92,11 +134,14 @@ object WebDavBackup {
         username: String,
         password: String,
         fileName: String,
-        data: ByteArray
+        data: ByteArray,
+        directory: String? = DEFAULT_DIRECTORY
     ): WebDavResult {
-        val folder = folderUrl(host, port, https)
+        val normalizedDirectory = normalizeDirectory(directory)
+        val folder = folderUrl(host, port, https, normalizedDirectory)
             ?: return WebDavResult(false, "WebDAV 地址或端口无效")
-        ensureFolder(store, folder, username, password).takeIf { !it.ok }?.let { return it }
+        ensureFolder(store, host, port, https, normalizedDirectory, username, password)
+            .takeIf { !it.ok }?.let { return it }
 
         val file = try {
             URL(folder, fileName)
@@ -121,7 +166,7 @@ object WebDavBackup {
         return when {
             response.code in 200..299 -> WebDavResult(
                 true,
-                "已上传到 /$FOLDER_NAME/$fileName",
+                "已上传到 $normalizedDirectory$fileName",
                 backup = RemoteBackup(file, fileName, System.currentTimeMillis(), data.size.toLong())
             )
             response.code == 401 || response.code == 403 ->
@@ -131,16 +176,18 @@ object WebDavBackup {
         }
     }
 
-    /** 查找 /PixivPlus/ 中最近一次备份。 */
+    /** 查找指定目录中最近一次备份。 */
     fun latest(
         store: ConfigStore,
         host: String,
         port: Int,
         https: Boolean,
         username: String,
-        password: String
+        password: String,
+        directory: String? = DEFAULT_DIRECTORY
     ): WebDavResult {
-        val folder = folderUrl(host, port, https)
+        val normalizedDirectory = normalizeDirectory(directory)
+        val folder = folderUrl(host, port, https, normalizedDirectory)
             ?: return WebDavResult(false, "WebDAV 地址或端口无效")
         val headers = authHeaders(username, password).apply {
             put("Depth", "1")
@@ -161,7 +208,10 @@ object WebDavBackup {
             return WebDavResult(false, "WebDAV 认证失败（HTTP ${response.code}）")
         }
         if (response.code == 404) {
-            return WebDavResult(false, "WebDAV 目录 /$FOLDER_NAME/ 不存在，请先上传一次备份")
+            return WebDavResult(
+                false,
+                "WebDAV 目录 $normalizedDirectory 不存在，请先上传一次备份"
+            )
         }
         if (response.code == 405) {
             return WebDavResult(false, "WebDAV 服务器不支持 PROPFIND（HTTP 405）")
@@ -170,7 +220,10 @@ object WebDavBackup {
             return WebDavResult(false, "读取 WebDAV 目录失败：HTTP ${response.code}")
         }
         val file = parseLatest(response.body, folder)
-            ?: return WebDavResult(false, "WebDAV 目录中没有 pixiv-backup-*.json 备份")
+            ?: return WebDavResult(
+                false,
+                "WebDAV 目录 $normalizedDirectory 中没有 pixiv-backup-*.json 备份"
+            )
         return WebDavResult(true, "找到备份 ${file.name}", backup = file)
     }
 
@@ -241,33 +294,65 @@ object WebDavBackup {
         }
     }
 
+    /** 依次创建目录的每一级，兼容自定义的多级路径。 */
     private fun ensureFolder(
         store: ConfigStore,
-        folder: URL,
+        host: String,
+        port: Int,
+        https: Boolean,
+        directory: String,
         username: String,
         password: String
     ): WebDavResult {
-        val headers = authHeaders(username, password).apply {
-            put("Content-Length", "0")
+        val segments = directory.trim('/').split('/').filter { it.isNotEmpty() }
+        if (segments.isEmpty()) return WebDavResult(true, "备份目录为服务器根目录")
+        var path = ""
+        for (segment in segments) {
+            path += "/$segment"
+            val folder = folderUrl(host, port, https, "$path/")
+                ?: return WebDavResult(false, "WebDAV 地址或端口无效")
+            val headers = authHeaders(username, password).apply {
+                put("Content-Length", "0")
+            }
+            val response = ProxyHttp.request(
+                store = store,
+                url = folder,
+                method = "MKCOL",
+                headers = headers,
+                body = null,
+                maxBodyChars = 4096,
+                connectTimeoutMs = 15000,
+                readTimeoutMs = 30000
+            ) ?: return WebDavResult(false, "无法连接 WebDAV：${failureReason()}")
+            when {
+                response.code in 200..299 || response.code == 405 -> Unit
+                response.code == 401 || response.code == 403 ->
+                    return WebDavResult(false, "WebDAV 认证失败（HTTP ${response.code}）")
+                response.code == 409 -> return WebDavResult(
+                    false,
+                    "WebDAV 目录 ${folder.path} 的父目录不存在（HTTP 409）"
+                )
+                else -> return WebDavResult(
+                    false,
+                    "创建目录 ${folder.path} 失败：HTTP ${response.code}"
+                )
+            }
         }
-        val response = ProxyHttp.request(
-            store = store,
-            url = folder,
-            method = "MKCOL",
-            headers = headers,
-            body = null,
-            maxBodyChars = 4096,
-            connectTimeoutMs = 15000,
-            readTimeoutMs = 30000
-        ) ?: return WebDavResult(false, "无法连接 WebDAV：${failureReason()}")
-        return when {
-            response.code in 200..299 -> WebDavResult(true, "备份目录已就绪")
-            response.code == 405 -> WebDavResult(true, "备份目录已存在")
-            response.code == 401 || response.code == 403 ->
-                WebDavResult(false, "WebDAV 认证失败（HTTP ${response.code}）")
-            response.code == 409 ->
-                WebDavResult(false, "WebDAV 服务器路径无效或父目录不存在（HTTP 409）")
-            else -> WebDavResult(false, "创建 /$FOLDER_NAME/ 目录失败：HTTP ${response.code}")
+        return WebDavResult(true, "备份目录已就绪")
+    }
+
+    private fun encodePath(path: String): String {
+        val normalized = if (path.startsWith("/")) path else "/$path"
+        return normalized.split('/').joinToString("/") { segment ->
+            if (segment.isEmpty()) "" else encodeSegment(segment)
+        }
+    }
+
+    private fun encodeSegment(segment: String): String {
+        return try {
+            URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
+        } catch (_: Throwable) {
+            segment
         }
     }
 
