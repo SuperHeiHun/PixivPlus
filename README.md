@@ -3,7 +3,7 @@
 面向 Pixiv Android 客户端的 LSPosed / Xposed 模块，在本地提供过滤、历史、快捷屏蔽与界面增强能力。
 所有数据都保存在宿主应用的私有目录中，模块不上传任何信息。
 
-项目主页：<https://github.com/SuperHeiHun/PixivPlus>
+Telegrim频道：<https://t.me/HeiHun_Sub>
 
 ## 适配版本
 
