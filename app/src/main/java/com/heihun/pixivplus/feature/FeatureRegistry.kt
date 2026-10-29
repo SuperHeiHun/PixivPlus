@@ -41,6 +41,11 @@ object FeatureRegistry {
         watchedKeys.add(ConfigKeys.FILTER_TAGS)
         watchedKeys.add(ConfigKeys.FILTER_AUTHORS)
         watchedKeys.add(ConfigKeys.FILTER_CASE_SENSITIVE)
+        watchedKeys.add(ConfigKeys.PROXY_MODE)
+        watchedKeys.add(ConfigKeys.PROXY_HOST)
+        watchedKeys.add(ConfigKeys.PROXY_PORT)
+        watchedKeys.add(ConfigKeys.PROXY_USERNAME)
+        watchedKeys.add(ConfigKeys.PROXY_PASSWORD)
 
         for (key in watchedKeys) {
             config.addListener(key) { value ->

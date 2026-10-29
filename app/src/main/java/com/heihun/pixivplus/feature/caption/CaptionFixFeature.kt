@@ -1,6 +1,5 @@
 package com.heihun.pixivplus.feature.caption
 
-import android.provider.Settings
 import android.text.Html
 import android.text.method.LinkMovementMethod
 import android.view.View
@@ -10,6 +9,8 @@ import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.net.ApiHooks
 import com.heihun.pixivplus.core.net.PayloadProcessor
+import com.heihun.pixivplus.core.net.ProxyHttp
+import com.heihun.pixivplus.core.net.ProxySettings
 import com.heihun.pixivplus.core.util.EntityReader
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
@@ -18,11 +19,6 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import org.json.JSONObject
 import java.lang.ref.WeakReference
-import java.net.HttpURLConnection
-import java.net.InetSocketAddress
-import java.net.Proxy
-import java.net.ProxySelector
-import java.net.URI
 import java.net.URL
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -108,6 +104,7 @@ class CaptionFixFeature : ConfigurableFeature(
     override fun onConfigChanged(host: Host) {
         enabled = isEnabled(ConfigStoreRegistry.store)
         PayloadProcessor.captionFixEnabled = enabled
+        retryAfter.clear()
         ModuleLog.i(displayName, "插画简介修复已${if (enabled) "开启" else "关闭"}")
     }
 
@@ -234,76 +231,31 @@ class CaptionFixFeature : ConfigurableFeature(
         }
     }
 
-    private fun resolveProxy(): Proxy? {
-        try {
-            val selected = ProxySelector.getDefault()?.select(URI("https://www.pixiv.net/"))
-            val http = selected?.firstOrNull { it.type() == Proxy.Type.HTTP }
-            val address = http?.address()
-            if (address is InetSocketAddress && !address.isUnresolved && address.port > 0) {
-                return http
-            }
-        } catch (_: Throwable) {
-        }
-        return try {
-            val context = Host.context() ?: return null
-            val resolver = context.contentResolver
-            var host = Settings.Global.getString(resolver, "global_http_proxy_host")
-            var port = Settings.Global.getInt(resolver, "global_http_proxy_port", 0)
-            if (host.isNullOrEmpty()) {
-                val combined = Settings.Global.getString(resolver, Settings.Global.HTTP_PROXY) ?: return null
-                val value = combined.substringAfter("://", combined)
-                val index = value.lastIndexOf(':')
-                if (index > 0) {
-                    host = value.substring(0, index)
-                    port = value.substring(index + 1).toIntOrNull() ?: 0
-                }
-            }
-            if (host.isNullOrEmpty() || port <= 0) {
-                null
-            } else {
-                Proxy(Proxy.Type.HTTP, InetSocketAddress(host, port))
-            }
-        } catch (_: Throwable) {
-            null
-        }
-    }
-
     private fun fetchWebCaption(id: Long, cookie: String?): String? {
-        var connection: HttpURLConnection? = null
         return try {
-            val url = URL(String.format(java.util.Locale.ROOT, WEB_API, id))
-            val proxy = resolveProxy()
-            ModuleLog.d(displayName, "web caption fetch id=$id proxy=${proxy?.address() ?: "direct"}")
-            val conn = (if (proxy != null) url.openConnection(proxy) else url.openConnection())
-                as HttpURLConnection
-            connection = conn
-            conn.connectTimeout = 8000
-            conn.readTimeout = 12000
-            conn.instanceFollowRedirects = true
-            conn.requestMethod = "GET"
-            conn.setRequestProperty("Referer", WEB_REFERER)
-            conn.setRequestProperty("User-Agent", USER_AGENT)
-            conn.setRequestProperty("Accept", "application/json, text/plain, */*")
-            conn.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,ja;q=0.8,en;q=0.7")
+            val store = ConfigStoreRegistry.store
+            val spec = ProxySettings.current(store)
+            val headers = linkedMapOf(
+                "Referer" to WEB_REFERER,
+                "User-Agent" to USER_AGENT,
+                "Accept" to "application/json, text/plain, */*",
+                "Accept-Language" to "zh-CN,zh;q=0.9,ja;q=0.8,en;q=0.7"
+            )
             if (!cookie.isNullOrEmpty()) {
-                conn.setRequestProperty("Cookie", cookie)
+                headers["Cookie"] = cookie
             }
-            val code = conn.responseCode
-            if (code != HttpURLConnection.HTTP_OK) {
-                ModuleLog.w(displayName, "web caption http $code id=$id")
+            ModuleLog.d(displayName, "web caption fetch id=$id proxy=${ProxySettings.describe(spec)}")
+            val response = ProxyHttp.get(
+                store = store,
+                url = URL(String.format(java.util.Locale.ROOT, WEB_API, id)),
+                headers = headers,
+                maxBodyChars = MAX_BODY_CHARS
+            ) ?: return null
+            if (response.code != 200) {
+                ModuleLog.w(displayName, "web caption http ${response.code} id=$id")
                 return null
             }
-            val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
-                val builder = StringBuilder()
-                val buffer = CharArray(8192)
-                while (builder.length < MAX_BODY_CHARS) {
-                    val read = reader.read(buffer)
-                    if (read < 0) break
-                    builder.append(buffer, 0, read)
-                }
-                builder.toString()
-            }
-            val root = JSONObject(text)
+            val root = JSONObject(response.body)
             if (root.optBoolean("error", false)) {
                 ModuleLog.w(displayName, "web caption error id=$id message=${root.optString("message")}")
                 return null
@@ -312,11 +264,6 @@ class CaptionFixFeature : ConfigurableFeature(
         } catch (t: Throwable) {
             ModuleLog.w(displayName, "web caption fetch failed id=$id: ${t.javaClass.simpleName}: ${t.message}")
             null
-        } finally {
-            try {
-                connection?.disconnect()
-            } catch (_: Throwable) {
-            }
         }
     }
 }

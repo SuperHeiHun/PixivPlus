@@ -6,9 +6,13 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Toast
 import com.heihun.pixivplus.BuildConfig
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.log.ModuleLog
+import com.heihun.pixivplus.core.net.ProxyMode
+import com.heihun.pixivplus.core.net.ProxySettings
+import com.heihun.pixivplus.core.net.ProxySpec
 import com.heihun.pixivplus.core.Runtime
 import com.heihun.pixivplus.ui.UiKit
 
@@ -123,6 +127,11 @@ object SettingsPanelBuilder {
         ) { checked -> putConfig(ConfigKeys.FILTER_CASE_SENSITIVE, checked) })
         body.addView(filters)
 
+        body.addView(UiKit.sectionTitle(activity, "网络代理"))
+        val proxyCard = UiKit.card(activity)
+        body.addView(proxyCard)
+        renderProxyCard(activity, proxyCard)
+
         body.addView(UiKit.sectionTitle(activity, "浏览历史"))
         val history = UiKit.card(activity)
         addRow(history, UiKit.switchRow(
@@ -163,6 +172,115 @@ object SettingsPanelBuilder {
         scroll.addView(body)
         root.addView(scroll)
         return root
+    }
+
+    private fun renderProxyCard(activity: Activity, card: LinearLayout) {
+        val store = Runtime.configOrNull()
+        val spec = store?.let { ProxySettings.current(it) } ?: ProxySpec(ProxyMode.SYSTEM, "", 0)
+        card.removeAllViews()
+
+        card.addView(UiKit.selectRow(activity, "代理模式", spec.mode.label) {
+            val modes = ProxyMode.entries
+            ChoiceDialog.show(
+                activity,
+                "代理模式",
+                modes.map { it.label },
+                modes.indexOf(spec.mode)
+            ) { index ->
+                putConfig(ConfigKeys.PROXY_MODE, modes[index].storageValue)
+                renderProxyCard(activity, card)
+            }
+        })
+
+        if (spec.mode.requiresEndpoint()) {
+            card.addView(UiKit.divider(activity, 16, 16))
+            card.addView(UiKit.inputRow(
+                activity,
+                "代理地址",
+                configText(ConfigKeys.PROXY_HOST),
+                "例如 192.168.10.12"
+            ) { value -> putConfig(ConfigKeys.PROXY_HOST, value) })
+            card.addView(UiKit.divider(activity, 16, 16))
+            card.addView(UiKit.inputRow(
+                activity,
+                "代理端口",
+                configText(ConfigKeys.PROXY_PORT),
+                "7890",
+                numeric = true
+            ) { value -> putConfig(ConfigKeys.PROXY_PORT, value.filter { it.isDigit() }.take(5)) })
+
+            when (spec.mode) {
+                ProxyMode.HTTP, ProxyMode.SOCKS5 -> {
+                    card.addView(UiKit.divider(activity, 16, 16))
+                    card.addView(UiKit.inputRow(
+                        activity,
+                        "用户名（可选）",
+                        configText(ConfigKeys.PROXY_USERNAME),
+                        "留空表示免认证"
+                    ) { value -> putConfig(ConfigKeys.PROXY_USERNAME, value.trim()) })
+                    card.addView(UiKit.divider(activity, 16, 16))
+                    card.addView(UiKit.inputRow(
+                        activity,
+                        "密码（可选）",
+                        configText(ConfigKeys.PROXY_PASSWORD),
+                        "留空表示无密码",
+                        password = true
+                    ) { value -> putConfig(ConfigKeys.PROXY_PASSWORD, value) })
+                }
+                ProxyMode.SOCKS4 -> {
+                    card.addView(UiKit.divider(activity, 16, 16))
+                    card.addView(UiKit.inputRow(
+                        activity,
+                        "用户 ID（可选）",
+                        configText(ConfigKeys.PROXY_USERNAME),
+                        "作为 SOCKS4 USERID 发送，可留空"
+                    ) { value -> putConfig(ConfigKeys.PROXY_USERNAME, value.trim()) })
+                }
+                else -> Unit
+            }
+
+            card.addView(UiKit.paragraph(
+                activity,
+                "认证凭据以明文保存在 Pixiv 的私有配置中，仅用于模块自身的网页请求。"
+            ))
+        }
+
+        card.addView(UiKit.divider(activity, 16, 16))
+        card.addView(UiKit.paragraph(activity, proxyHint(spec.mode)))
+        card.addView(UiKit.filledButtonRow(activity, "测试代理连接") { testProxy(activity) })
+    }
+
+    private fun proxyHint(mode: ProxyMode): String = when (mode) {
+        ProxyMode.SYSTEM -> "使用 Android 系统代理。模块的网页请求会自动沿用 Wi-Fi 或全局代理设置。"
+        ProxyMode.DIRECT -> "不使用代理，模块的网页请求直接连接。"
+        ProxyMode.HTTP -> "HTTP / HTTPS 代理：HTTP 请求直接转发，HTTPS 请求通过 CONNECT 隧道；支持 HTTP Basic 认证。"
+        ProxyMode.SOCKS4 -> "SOCKS4 / SOCKS4a 代理：支持域名目标；认证方式为 USERID，不支持密码。"
+        ProxyMode.SOCKS5 -> "SOCKS5 代理：支持域名目标与 RFC 1929 用户名 / 密码认证。"
+    }
+
+    private fun testProxy(activity: Activity) {
+        val store = Runtime.configOrNull()
+        if (store == null) {
+            Toast.makeText(activity, "配置尚未初始化", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val spec = ProxySettings.current(store)
+        if (spec.mode.requiresEndpoint() && !spec.hasValidEndpoint()) {
+            Toast.makeText(activity, "请先填写有效的代理地址和端口", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Toast.makeText(activity, "正在测试代理连接…", Toast.LENGTH_SHORT).show()
+        Thread({
+            val result = ProxySettings.test(store)
+            try {
+                activity.runOnUiThread {
+                    if (!activity.isFinishing) {
+                        Toast.makeText(activity, result.message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }, "plp-proxy-test").apply { isDaemon = true }.start()
     }
 
     private fun addRow(card: LinearLayout, row: View) {

@@ -21,6 +21,16 @@ object ConfigKeys {
 
     val CAPTION_FIX = ConfigKey("caption_fix", true, { it.toString() }, { it.toBoolean() })
 
+    val PROXY_MODE = ConfigKey("proxy_mode", "system", { it }, { it })
+
+    val PROXY_HOST = ConfigKey("proxy_host", "", { it }, { it })
+
+    val PROXY_PORT = ConfigKey("proxy_port", "7890", { it }, { it })
+
+    val PROXY_USERNAME = ConfigKey("proxy_username", "", { it }, { it })
+
+    val PROXY_PASSWORD = ConfigKey("proxy_password", "", { it }, { it })
+
     val FILTER_KEYWORDS = ConfigKey("filter_keywords", "", { it }, { it })
 
     val FILTER_TAGS = ConfigKey("filter_tags", "", { it }, { it })

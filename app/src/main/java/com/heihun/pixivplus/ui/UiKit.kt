@@ -131,6 +131,40 @@ object UiKit {
         return row
     }
 
+    /** 可点按的选择行：上方标签、下方当前值、右侧箭头。 */
+    fun selectRow(
+        context: Context,
+        label: String,
+        value: String,
+        onClick: () -> Unit
+    ): View {
+        val palette = colors(context)
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(context, 64)
+            setPadding(dp(context, 16), dp(context, 10), dp(context, 16), dp(context, 10))
+            background = rippleRect(context, palette.primary)
+            isClickable = true
+            isFocusable = true
+        }
+        val texts = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        texts.addView(bodyText(context, label, 13f, palette.onSurfaceVariant))
+        texts.addView(bodyText(context, value, 16f, palette.onSurface).apply {
+            setPadding(0, dp(context, 2), 0, 0)
+        })
+        row.addView(texts)
+        row.addView(bodyText(context, "\u203A", 22f, palette.onSurfaceVariant).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(context, 12), 0, 0, 0)
+        })
+        row.setOnClickListener { onClick() }
+        return row
+    }
+
     fun infoRow(context: Context, label: String, value: String): LinearLayout {
         val palette = colors(context)
         return LinearLayout(context).apply {
@@ -157,6 +191,7 @@ object UiKit {
         value: String,
         hint: String,
         numeric: Boolean = false,
+        password: Boolean = false,
         onChanged: (String) -> Unit
     ): LinearLayout {
         val palette = colors(context)
@@ -183,6 +218,11 @@ object UiKit {
                     inputType = InputType.TYPE_CLASS_NUMBER
                     maxLines = 1
                     setSingleLine(true)
+                } else if (password) {
+                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                    maxLines = 1
+                    setSingleLine(true)
+                    typeface = Md3.regular
                 } else {
                     inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
                     maxLines = 4
