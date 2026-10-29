@@ -107,6 +107,11 @@ object SettingsPanelBuilder {
         body.addView(proxyCard)
         renderProxyCard(activity, proxyCard)
 
+        body.addView(UiKit.sectionTitle(activity, "数据备份"))
+        val backupCard = UiKit.card(activity)
+        body.addView(backupCard)
+        BackupPanel.build(activity, backupCard)
+
         body.addView(UiKit.sectionTitle(activity, "浏览历史"))
         val history = UiKit.card(activity)
         addRow(history, UiKit.switchRow(

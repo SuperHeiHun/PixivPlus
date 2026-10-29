@@ -49,6 +49,56 @@ class TunnelHttpClientTest {
     }
 
     @Test
+    fun `http proxy put sends body with content length`() {
+        val capturedHead = AtomicReference<String>()
+        val capturedBody = AtomicReference<String>()
+        val payload = """{"format":"pixivplus-backup","version":1}"""
+        val server = OneShotServer { socket ->
+            val input = socket.getInputStream()
+            val head = readHead(input)
+            capturedHead.set(head)
+            val length = head.split("\r\n")
+                .firstOrNull { it.startsWith("Content-Length:", ignoreCase = true) }
+                ?.substringAfter(':')
+                ?.trim()
+                ?.toIntOrNull() ?: 0
+            val body = ByteArray(length)
+            DataInputStream(input).readFully(body)
+            capturedBody.set(String(body, Charsets.UTF_8))
+            val output = socket.getOutputStream()
+            output.write(
+                "HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    .toByteArray(Charsets.US_ASCII)
+            )
+            output.flush()
+        }
+        try {
+            val spec = ProxySpec(ProxyMode.HTTP, "127.0.0.1", server.port, "user", "pass")
+            val response = TunnelHttpClient.request(
+                spec = spec,
+                method = "PUT",
+                url = URL("http://example.test/backup.json"),
+                headers = mapOf("Content-Type" to "application/json; charset=utf-8"),
+                body = payload.toByteArray(Charsets.UTF_8),
+                maxBodyChars = 4096,
+                connectTimeoutMs = 5000,
+                readTimeoutMs = 5000
+            )
+            server.await()
+
+            assertEquals(201, response?.code)
+            val head = capturedHead.get()
+            assertTrue(head.startsWith("PUT http://example.test/backup.json HTTP/1.1\r\n"))
+            assertTrue(head.contains("\r\nProxy-Authorization: Basic dXNlcjpwYXNz\r\n"))
+            assertTrue(head.contains("\r\nContent-Length: ${payload.toByteArray(Charsets.UTF_8).size}\r\n"))
+            assertTrue(head.contains("\r\nContent-Type: application/json; charset=utf-8\r\n"))
+            assertEquals(payload, capturedBody.get())
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test
     fun `socks4 sends user id during handshake`() {
         val capturedUser = AtomicReference<String>()
         val capturedHost = AtomicReference<String>()

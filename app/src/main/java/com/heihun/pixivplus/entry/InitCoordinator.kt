@@ -15,6 +15,7 @@ import com.heihun.pixivplus.core.db.LocalDatabase
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.FeatureRegistry
+import com.heihun.pixivplus.ui.ActivityResultBridge
 import com.heihun.pixivplus.ui.inject.SettingsInjector
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -72,6 +73,7 @@ object InitCoordinator {
             ConfigStoreRegistry.install(config)
 
             SettingsInjector.install()
+            ActivityResultBridge.install()
             FeatureRegistry.installAll(Host, config)
 
             background.execute {

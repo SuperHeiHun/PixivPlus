@@ -67,6 +67,40 @@ class ConfigManager(private val prefs: SharedPreferences) : ConfigStore {
         listeners.removeAll { it.second === listener }
     }
 
+    /** 导出所有字符串配置；用于数据备份。 */
+    fun snapshotStrings(): Map<String, String> {
+        return try {
+            prefs.all.entries.mapNotNull { (name, value) ->
+                (value as? String)?.let { name to it }
+            }.toMap()
+        } catch (t: Throwable) {
+            ModuleLog.w("Config", "snapshot failed", t)
+            emptyMap()
+        }
+    }
+
+    /** 恢复配置；密码类配置保留本机现有值，避免备份文件携带或清空凭据。 */
+    fun restoreStrings(values: Map<String, String>): Int {
+        return try {
+            val preserved = ConfigKeys.LOCAL_ONLY_NAMES.mapNotNull { name ->
+                readRaw(name)?.let { name to it }
+            }
+            val editor = prefs.edit().clear()
+            for ((name, value) in values) {
+                if (name in ConfigKeys.LOCAL_ONLY_NAMES) continue
+                editor.putString(name, value)
+            }
+            for ((name, value) in preserved) {
+                editor.putString(name, value)
+            }
+            editor.apply()
+            values.size
+        } catch (t: Throwable) {
+            ModuleLog.w("Config", "restore failed", t)
+            0
+        }
+    }
+
     private fun readRaw(name: String): String? {
         return try {
             prefs.getString(name, null)

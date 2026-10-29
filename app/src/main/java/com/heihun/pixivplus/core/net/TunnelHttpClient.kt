@@ -25,7 +25,8 @@ import javax.net.ssl.SSLSocketFactory
  *
  * 不使用 HttpURLConnection 的代理认证，避免修改宿主进程的全局
  * Authenticator；连接、代理认证、TLS 与 HTTP/1.1 请求都在这里完成。
- * 仅实现 GET，足够模块的简介兜底与代理连通性测试使用。
+ * 支持直连与任意 HTTP 方法（含 PUT / PROPFIND），满足简介兜底、
+ * 代理测试与 WebDAV 备份使用。
  */
 internal object TunnelHttpClient {
 
@@ -42,11 +43,44 @@ internal object TunnelHttpClient {
         readTimeoutMs: Int,
         onError: ((Throwable) -> Unit)? = null
     ): ProxyResponse? {
+        return request(
+            spec = spec,
+            method = "GET",
+            url = url,
+            headers = headers,
+            body = null,
+            maxBodyChars = maxBodyChars,
+            connectTimeoutMs = connectTimeoutMs,
+            readTimeoutMs = readTimeoutMs,
+            onError = onError
+        )
+    }
+
+    fun request(
+        spec: ProxySpec,
+        method: String,
+        url: URL,
+        headers: Map<String, String>,
+        body: ByteArray?,
+        maxBodyChars: Int,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+        onError: ((Throwable) -> Unit)? = null
+    ): ProxyResponse? {
         var current = url
         var redirects = 0
         while (true) {
             val response = try {
-                requestOnce(spec, current, headers, maxBodyChars, connectTimeoutMs, readTimeoutMs)
+                requestOnce(
+                    spec = spec,
+                    method = method,
+                    url = current,
+                    headers = headers,
+                    body = body,
+                    maxBodyChars = maxBodyChars,
+                    connectTimeoutMs = connectTimeoutMs,
+                    readTimeoutMs = readTimeoutMs
+                )
             } catch (t: Throwable) {
                 ModuleLog.w(
                     TAG,
@@ -57,7 +91,11 @@ internal object TunnelHttpClient {
                 return null
             }
             val location = response.location
-            if (response.code in 300..399 && !location.isNullOrBlank() && redirects < MAX_REDIRECTS) {
+            if (method.equals("GET", true) &&
+                response.code in 300..399 &&
+                !location.isNullOrBlank() &&
+                redirects < MAX_REDIRECTS
+            ) {
                 current = try {
                     URL(current, location)
                 } catch (_: Throwable) {
@@ -72,8 +110,10 @@ internal object TunnelHttpClient {
 
     private fun requestOnce(
         spec: ProxySpec,
+        method: String,
         url: URL,
         headers: Map<String, String>,
+        body: ByteArray?,
         maxBodyChars: Int,
         connectTimeoutMs: Int,
         readTimeoutMs: Int
@@ -93,13 +133,18 @@ internal object TunnelHttpClient {
             val stream: Socket = if (isHttps) wrapTls(raw, url.host, targetPort) else raw
             val absoluteForm = spec.mode == ProxyMode.HTTP && !isHttps
             val request = buildRequest(
+                method = method,
                 url = url,
                 headers = headers,
+                bodyLength = body?.size,
                 absoluteForm = absoluteForm,
                 proxyAuthorization = if (absoluteForm) spec.basicAuthHeaderOrNull() else null
             )
             val output = BufferedOutputStream(stream.getOutputStream())
             output.write(request.toByteArray(Charsets.UTF_8))
+            if (body != null && body.isNotEmpty()) {
+                output.write(body)
+            }
             output.flush()
             val input = BufferedInputStream(stream.getInputStream())
             return readResponse(input, maxBodyChars)
@@ -119,6 +164,11 @@ internal object TunnelHttpClient {
     ): Socket {
         val socket = Socket()
         try {
+            if (spec.mode == ProxyMode.DIRECT) {
+                socket.connect(InetSocketAddress(targetHost, targetPort), timeoutMs)
+                socket.soTimeout = timeoutMs
+                return socket
+            }
             socket.connect(InetSocketAddress(spec.host, spec.port), timeoutMs)
             socket.soTimeout = timeoutMs
             when (spec.mode) {
@@ -300,14 +350,16 @@ internal object TunnelHttpClient {
     }
 
     private fun buildRequest(
+        method: String,
         url: URL,
         headers: Map<String, String>,
+        bodyLength: Int?,
         absoluteForm: Boolean,
         proxyAuthorization: String?
     ): String {
         val builder = StringBuilder()
         val target = if (absoluteForm) absoluteUrl(url) else pathOf(url)
-        builder.append("GET ").append(target).append(" HTTP/1.1\r\n")
+        builder.append(method.uppercase(Locale.ROOT)).append(' ').append(target).append(" HTTP/1.1\r\n")
         builder.append("Host: ").append(hostHeader(url)).append("\r\n")
         if (!proxyAuthorization.isNullOrEmpty()) {
             builder.append("Proxy-Authorization: ").append(proxyAuthorization).append("\r\n")
@@ -319,6 +371,9 @@ internal object TunnelHttpClient {
                 continue
             }
             builder.append(name).append(": ").append(value).append("\r\n")
+        }
+        if (bodyLength != null && headers.keys.none { it.equals("Content-Length", true) }) {
+            builder.append("Content-Length: ").append(bodyLength).append("\r\n")
         }
         builder.append("Connection: close\r\n\r\n")
         return builder.toString()

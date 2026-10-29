@@ -194,6 +194,7 @@ object UiKit {
         hint: String,
         numeric: Boolean = false,
         password: Boolean = false,
+        singleLine: Boolean = false,
         onChanged: (String) -> Unit
     ): LinearLayout {
         val palette = colors(context)
@@ -204,7 +205,7 @@ object UiKit {
             row.addView(bodyText(context, label, 13f, palette.onSurfaceVariant).apply {
                 setPadding(dp(context, 2), 0, 0, dp(context, 6))
             })
-            row.addView(inputField(context, value, hint, numeric, password, onChanged))
+            row.addView(inputField(context, value, hint, numeric, password, singleLine, onChanged))
         }
     }
 
@@ -215,6 +216,7 @@ object UiKit {
         hint: String,
         numeric: Boolean = false,
         password: Boolean = false,
+        singleLine: Boolean = false,
         onChanged: (String) -> Unit
     ): EditText {
         val palette = colors(context)
@@ -239,6 +241,10 @@ object UiKit {
                 maxLines = 1
                 setSingleLine(true)
                 typeface = Md3.regular
+            } else if (singleLine) {
+                inputType = InputType.TYPE_CLASS_TEXT
+                maxLines = 1
+                setSingleLine(true)
             } else {
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 maxLines = 4

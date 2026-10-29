@@ -31,6 +31,26 @@ object ConfigKeys {
 
     val PROXY_PASSWORD = ConfigKey("proxy_password", "", { it }, { it })
 
+    val WEBDAV_HOST = ConfigKey("webdav_host", "", { it }, { it })
+
+    val WEBDAV_PORT = ConfigKey("webdav_port", "80", { it }, { it })
+
+    val WEBDAV_HTTPS = ConfigKey("webdav_https", false, { it.toString() }, { it.toBoolean() })
+
+    val WEBDAV_USERNAME = ConfigKey("webdav_username", "", { it }, { it })
+
+    val WEBDAV_PASSWORD = ConfigKey("webdav_password", "", { it }, { it })
+
+    /** 本地备份文件夹的 SAF tree URI，仅保留在当前设备。 */
+    val BACKUP_FOLDER_URI = ConfigKey("backup_folder_uri", "", { it }, { it })
+
+    /** 不写入备份文件的敏感 / 设备相关配置；恢复时保留本机现有值。 */
+    val LOCAL_ONLY_NAMES = setOf(
+        PROXY_PASSWORD.name,
+        WEBDAV_PASSWORD.name,
+        BACKUP_FOLDER_URI.name
+    )
+
     val FILTER_KEYWORDS = ConfigKey("filter_keywords", "", { it }, { it })
 
     val FILTER_TAGS = ConfigKey("filter_tags", "", { it }, { it })

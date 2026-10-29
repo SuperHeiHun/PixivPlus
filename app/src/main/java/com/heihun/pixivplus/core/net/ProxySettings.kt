@@ -96,9 +96,12 @@ object ProxySettings {
     }
 
     internal fun openConnection(spec: ProxySpec, url: URL): HttpURLConnection? {
-        val proxy = if (spec.mode == ProxyMode.SYSTEM) systemProxy() else null
+        val proxy = when (spec.mode) {
+            ProxyMode.SYSTEM -> systemProxy()
+            else -> Proxy.NO_PROXY
+        }
         return try {
-            (if (proxy != null) url.openConnection(proxy) else url.openConnection()) as? HttpURLConnection
+            url.openConnection(proxy ?: Proxy.NO_PROXY) as? HttpURLConnection
         } catch (t: Throwable) {
             ModuleLog.w(TAG, "open connection failed: ${t.javaClass.simpleName}: ${t.message}")
             null
