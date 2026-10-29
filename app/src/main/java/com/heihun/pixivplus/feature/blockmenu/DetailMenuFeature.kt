@@ -1,7 +1,6 @@
 package com.heihun.pixivplus.feature.blockmenu
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -18,6 +17,7 @@ import com.heihun.pixivplus.core.util.EntityReader
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.ConfigurableFeature
+import com.heihun.pixivplus.ui.panel.TagSelectDialog
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import java.lang.reflect.Method
@@ -430,28 +430,20 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
             toast(activity, "未获取到当前作品的标签")
             return
         }
-        val checked = BooleanArray(tags.size)
         try {
-            AlertDialog.Builder(activity)
-                .setTitle("选择要屏蔽的标签")
-                .setMultiChoiceItems(tags.toTypedArray(), checked) { _, which, isChecked ->
-                    checked[which] = isChecked
+            TagSelectDialog.show(activity, tags) { selected ->
+                if (selected.isEmpty()) {
+                    toast(activity, "未选择标签")
+                    return@show
                 }
-                .setNegativeButton("取消", null)
-                .setPositiveButton("保存") { _, _ ->
-                    val selected = tags.filterIndexed { index, _ -> checked[index] }
-                    if (selected.isEmpty()) {
-                        toast(activity, "未选择标签")
-                        return@setPositiveButton
-                    }
-                    val current = ConfigStoreRegistry.store.get(ConfigKeys.FILTER_TAGS)
-                    ConfigStoreRegistry.store.put(
-                        ConfigKeys.FILTER_TAGS,
-                        RuleAppender.append(current, selected)
-                    )
-                    toast(activity, "已添加 ${selected.size} 个屏蔽标签")
-                }
-                .show()
+                val current = ConfigStoreRegistry.store.get(ConfigKeys.FILTER_TAGS)
+                ConfigStoreRegistry.store.put(
+                    ConfigKeys.FILTER_TAGS,
+                    RuleAppender.append(current, selected)
+                )
+                toast(activity, "已添加 ${selected.size} 个屏蔽标签")
+                ModuleLog.i(displayName, "block-by-tag appended ${selected.size} tags: ${selected.joinToString(", ")}")
+            }
         } catch (t: Throwable) {
             ModuleLog.w(displayName, "tag dialog failed", t)
         }

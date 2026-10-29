@@ -91,23 +91,42 @@ object SettingsInjector {
     }
 
     private fun buildEntryRow(activity: Activity): LinearLayout {
+        val palette = UiKit.colors(activity)
+        val titleColor = resolveThemeColor(activity, android.R.attr.textColorPrimary, palette.onSurface)
+        val subtitleColor = resolveThemeColor(activity, android.R.attr.textColorSecondary, palette.onSurfaceVariant)
         val row = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(UiKit.dp(activity, 20), UiKit.dp(activity, 14), UiKit.dp(activity, 20), UiKit.dp(activity, 20))
+            minimumHeight = UiKit.dp(activity, 72)
+            setPadding(UiKit.dp(activity, 20), UiKit.dp(activity, 12), UiKit.dp(activity, 16), UiKit.dp(activity, 12))
             isClickable = true
             isFocusable = true
-            setBackgroundResource(android.R.drawable.list_selector_background)
+            background = resolveSelectableBackground(activity)
+                ?: activity.getDrawable(android.R.drawable.list_selector_background)
         }
-        row.addView(TextView(activity).apply {
-            text = "PixivPlus"
-            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f)
+        val texts = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        texts.addView(TextView(activity).apply {
+            text = "PixivPlus"
+            textSize = 16f
+            setTextColor(titleColor)
+            typeface = com.heihun.pixivplus.ui.theme.Md3.medium
         })
-        row.addView(TextView(activity).apply {
+        texts.addView(TextView(activity).apply {
             text = "本地历史 / 过滤 / Premium / 去广告"
-            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11f)
-            alpha = 0.65f
+            textSize = 12f
+            setTextColor(subtitleColor)
+            setPadding(0, UiKit.dp(activity, 2), 0, 0)
+        })
+        row.addView(texts)
+        row.addView(TextView(activity).apply {
+            text = "\u203A"
+            textSize = 22f
+            setTextColor(subtitleColor)
+            gravity = Gravity.CENTER
+            setPadding(UiKit.dp(activity, 12), 0, 0, 0)
         })
         row.setOnClickListener { openPanel(activity) }
         row.setOnLongClickListener {
@@ -115,6 +134,38 @@ object SettingsInjector {
             true
         }
         return row
+    }
+
+    private fun resolveThemeColor(activity: Activity, attr: Int, fallback: Int): Int {
+        return try {
+            val value = android.util.TypedValue()
+            if (!activity.theme.resolveAttribute(attr, value, true)) return fallback
+            val resId = value.resourceId
+            if (resId != 0) {
+                activity.resources.getColorStateList(resId, activity.theme)?.defaultColor ?: fallback
+            } else if (value.type >= android.util.TypedValue.TYPE_FIRST_COLOR_INT &&
+                value.type <= android.util.TypedValue.TYPE_LAST_COLOR_INT
+            ) {
+                value.data
+            } else {
+                fallback
+            }
+        } catch (_: Throwable) {
+            fallback
+        }
+    }
+
+    private fun resolveSelectableBackground(activity: Activity): android.graphics.drawable.Drawable? {
+        return try {
+            val value = android.util.TypedValue()
+            if (!activity.theme.resolveAttribute(android.R.attr.selectableItemBackground, value, true)) {
+                return null
+            }
+            val resId = value.resourceId
+            if (resId != 0) activity.getDrawable(resId) else null
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private fun openPanel(activity: Activity) {

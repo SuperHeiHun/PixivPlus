@@ -32,7 +32,8 @@ object DiagnosticsPanel {
             )
         )
 
-        container.addView(UiKit.sectionTitle(context, "锚点解析状态"))
+        container.addView(UiKit.divider(context, 16, 16))
+        container.addView(UiKit.cardSectionTitle(context, "锚点解析状态"))
         val anchors = ResolveRegistry.all()
         if (anchors.isEmpty()) {
             container.addView(UiKit.infoRow(context, "状态", "尚未解析"))
@@ -48,9 +49,10 @@ object DiagnosticsPanel {
             }
         }
 
-        container.addView(UiKit.sectionTitle(context, "日志"))
+        container.addView(UiKit.divider(context, 16, 16))
+        container.addView(UiKit.cardSectionTitle(context, "日志"))
         container.addView(
-            UiKit.buttonRow(context, "导出日志到文件") {
+            UiKit.filledButtonRow(context, "导出日志到文件") {
                 val path = LogExporter.export(context)
                 if (path == null) {
                     toast(context, "导出失败，详见日志")
@@ -67,7 +69,7 @@ object DiagnosticsPanel {
             }
         )
         container.addView(
-            UiKit.buttonRow(context, "清空内存日志") {
+            UiKit.dangerButtonRow(context, "清空内存日志") {
                 ModuleLog.clear()
                 toast(context, "已清空")
             }
