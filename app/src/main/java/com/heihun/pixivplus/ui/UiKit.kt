@@ -155,6 +155,8 @@ object UiKit {
         texts.addView(bodyText(context, label, 13f, palette.onSurfaceVariant))
         texts.addView(bodyText(context, value, 16f, palette.onSurface).apply {
             setPadding(0, dp(context, 2), 0, 0)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
         })
         row.addView(texts)
         row.addView(bodyText(context, "\u203A", 22f, palette.onSurfaceVariant).apply {
@@ -202,47 +204,60 @@ object UiKit {
             row.addView(bodyText(context, label, 13f, palette.onSurfaceVariant).apply {
                 setPadding(dp(context, 2), 0, 0, dp(context, 6))
             })
-            row.addView(EditText(context).apply {
-                setText(value)
-                setHint(hint)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                setTextColor(palette.onSurface)
-                setHintTextColor(palette.onSurfaceVariant)
+            row.addView(inputField(context, value, hint, numeric, password, onChanged))
+        }
+    }
+
+    /** 单行/多行输入框；供设置项与弹窗编辑器复用。 */
+    fun inputField(
+        context: Context,
+        value: String,
+        hint: String,
+        numeric: Boolean = false,
+        password: Boolean = false,
+        onChanged: (String) -> Unit
+    ): EditText {
+        val palette = colors(context)
+        return EditText(context).apply {
+            setText(value)
+            setHint(hint)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextColor(palette.onSurface)
+            setHintTextColor(palette.onSurfaceVariant)
+            typeface = Md3.regular
+            background = textFieldBackground(context, palette)
+            setPadding(dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 12))
+            minHeight = dp(context, 56)
+            gravity = Gravity.TOP or Gravity.START
+            highlightColor = withAlpha(palette.primary, 0x33)
+            if (numeric) {
+                inputType = InputType.TYPE_CLASS_NUMBER
+                maxLines = 1
+                setSingleLine(true)
+            } else if (password) {
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                maxLines = 1
+                setSingleLine(true)
                 typeface = Md3.regular
-                background = textFieldBackground(context, palette)
-                setPadding(dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 12))
-                minHeight = dp(context, 56)
-                gravity = Gravity.TOP or Gravity.START
-                highlightColor = withAlpha(palette.primary, 0x33)
-                if (numeric) {
-                    inputType = InputType.TYPE_CLASS_NUMBER
-                    maxLines = 1
-                    setSingleLine(true)
-                } else if (password) {
-                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-                    maxLines = 1
-                    setSingleLine(true)
-                    typeface = Md3.regular
-                } else {
-                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                    maxLines = 4
+            } else {
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                maxLines = 4
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                textCursorDrawable = textCursorDrawable?.apply {
+                    setTint(palette.primary)
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    textCursorDrawable = textCursorDrawable?.apply {
-                        setTint(palette.primary)
-                    }
+            }
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
                 }
-                addTextChangedListener(object : TextWatcher {
-                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
-                    }
 
-                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                        onChanged(s?.toString() ?: "")
-                    }
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    onChanged(s?.toString() ?: "")
+                }
 
-                    override fun afterTextChanged(s: Editable?) {
-                    }
-                })
+                override fun afterTextChanged(s: Editable?) {
+                }
             })
         }
     }

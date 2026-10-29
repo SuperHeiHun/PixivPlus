@@ -10,6 +10,7 @@ import android.widget.Toast
 import com.heihun.pixivplus.BuildConfig
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.log.ModuleLog
+import com.heihun.pixivplus.core.net.FilterRules
 import com.heihun.pixivplus.core.net.ProxyMode
 import com.heihun.pixivplus.core.net.ProxySettings
 import com.heihun.pixivplus.core.net.ProxySpec
@@ -98,34 +99,8 @@ object SettingsPanelBuilder {
 
         body.addView(UiKit.sectionTitle(activity, "过滤规则"))
         val filters = UiKit.card(activity)
-        filters.addView(UiKit.inputRow(
-            activity,
-            "标题 / 简介关键词",
-            configText(ConfigKeys.FILTER_KEYWORDS),
-            "换行或逗号分隔，例如：R-18, 关键词"
-        ) { value -> putConfig(ConfigKeys.FILTER_KEYWORDS, value) })
-        filters.addView(UiKit.divider(activity, 16, 16))
-        filters.addView(UiKit.inputRow(
-            activity,
-            "标签",
-            configText(ConfigKeys.FILTER_TAGS),
-            "换行或逗号分隔，例如：原创, 舰娘"
-        ) { value -> putConfig(ConfigKeys.FILTER_TAGS, value) })
-        filters.addView(UiKit.divider(activity, 16, 16))
-        filters.addView(UiKit.inputRow(
-            activity,
-            "作者",
-            configText(ConfigKeys.FILTER_AUTHORS),
-            "换行或逗号分隔，例如：画师名, account"
-        ) { value -> putConfig(ConfigKeys.FILTER_AUTHORS, value) })
-        filters.addView(UiKit.divider(activity, 16, 16))
-        filters.addView(UiKit.switchRow(
-            activity,
-            "区分大小写",
-            "关闭时忽略英文大小写",
-            configValue(ConfigKeys.FILTER_CASE_SENSITIVE)
-        ) { checked -> putConfig(ConfigKeys.FILTER_CASE_SENSITIVE, checked) })
         body.addView(filters)
+        renderFilterCard(activity, filters)
 
         body.addView(UiKit.sectionTitle(activity, "网络代理"))
         val proxyCard = UiKit.card(activity)
@@ -172,6 +147,74 @@ object SettingsPanelBuilder {
         scroll.addView(body)
         root.addView(scroll)
         return root
+    }
+
+    private fun renderFilterCard(activity: Activity, card: LinearLayout) {
+        card.removeAllViews()
+        addRow(
+            card,
+            filterRow(
+                activity,
+                card,
+                "标题 / 简介关键词",
+                ConfigKeys.FILTER_KEYWORDS,
+                "例如：R-18, 关键词"
+            )
+        )
+        addRow(
+            card,
+            filterRow(
+                activity,
+                card,
+                "标签",
+                ConfigKeys.FILTER_TAGS,
+                "例如：原创, 舰娘"
+            )
+        )
+        addRow(
+            card,
+            filterRow(
+                activity,
+                card,
+                "作者",
+                ConfigKeys.FILTER_AUTHORS,
+                "例如：画师名, account"
+            )
+        )
+        addRow(
+            card,
+            UiKit.switchRow(
+                activity,
+                "区分大小写",
+                "关闭时忽略英文大小写",
+                configValue(ConfigKeys.FILTER_CASE_SENSITIVE)
+            ) { checked -> putConfig(ConfigKeys.FILTER_CASE_SENSITIVE, checked) }
+        )
+    }
+
+    private fun filterRow(
+        activity: Activity,
+        card: LinearLayout,
+        title: String,
+        key: com.heihun.pixivplus.core.config.ConfigKey<String>,
+        example: String
+    ): View {
+        val current = configText(key)
+        return UiKit.selectRow(activity, title, filterSummary(current)) {
+            FilterRuleDialog.show(activity, title, example, current) { value ->
+                putConfig(key, value)
+                renderFilterCard(activity, card)
+            }
+        }
+    }
+
+    private fun filterSummary(raw: String): String {
+        val rules = FilterRules.parse(raw)
+        return when {
+            rules.isEmpty() -> "未设置"
+            rules.size == 1 -> rules.first()
+            else -> "${rules.size} 条规则"
+        }
     }
 
     private fun renderProxyCard(activity: Activity, card: LinearLayout) {
