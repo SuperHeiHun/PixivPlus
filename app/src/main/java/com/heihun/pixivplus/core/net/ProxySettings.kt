@@ -144,7 +144,9 @@ object ProxySettings {
     /** 读取系统 HTTP 代理；Android 的设置不一定反映在 ProxySelector 上，因此做双重兜底。 */
     fun systemProxy(): Proxy? {
         try {
-            val selected = ProxySelector.getDefault()?.select(URI("https://www.pixiv.net/"))
+            // App 代理接管后默认选择器已是模块实现，解析「跟随系统」要用接管前记录的原始选择器。
+            val selector = AppProxy.originalSelector ?: ProxySelector.getDefault()
+            val selected = selector?.select(URI("https://www.pixiv.net/"))
             val http = selected?.firstOrNull { it.type() == Proxy.Type.HTTP }
             val address = http?.address()
             if (address is InetSocketAddress && !address.isUnresolved && address.port > 0) {

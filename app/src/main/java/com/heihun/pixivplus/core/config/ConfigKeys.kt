@@ -31,6 +31,9 @@ object ConfigKeys {
 
     val PROXY_PASSWORD = ConfigKey("proxy_password", "", { it }, { it })
 
+    /** 让宿主 App 的网络请求也走模块代理。 */
+    val APP_PROXY_ENABLED = ConfigKey("app_proxy_enabled", false, { it.toString() }, { it.toBoolean() })
+
     val WEBDAV_HOST = ConfigKey("webdav_host", "", { it }, { it })
 
     val WEBDAV_PORT = ConfigKey("webdav_port", "80", { it }, { it })

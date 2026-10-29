@@ -14,6 +14,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -62,22 +63,24 @@ object SettingsPanelBuilder {
             UiKit.styleFullScreenWindow(dialog)
 
             var current = Screen.MAIN
-            fun showScreen(screen: Screen) {
+            fun showScreen(screen: Screen, fromBack: Boolean = false) {
+                val goingBack = fromBack || (current != Screen.MAIN && screen == Screen.MAIN)
                 current = screen
                 renderScreen(
                     activity,
                     dialog,
                     container,
                     screen,
+                    goingBack,
                     { showScreen(it) },
-                    { showScreen(Screen.MAIN) }
+                    { showScreen(Screen.MAIN, fromBack = true) }
                 )
             }
 
             dialog.setOnKeyListener { _, keyCode, event ->
                 if (keyCode == KeyEvent.KEYCODE_BACK && current != Screen.MAIN) {
                     if (event.action == KeyEvent.ACTION_UP) {
-                        showScreen(Screen.MAIN)
+                        showScreen(Screen.MAIN, fromBack = true)
                     }
                     true
                 } else {
@@ -85,6 +88,16 @@ object SettingsPanelBuilder {
                 }
             }
             showScreen(Screen.MAIN)
+            container.alpha = 0f
+            container.scaleX = 0.97f
+            container.scaleY = 0.97f
+            container.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(200L)
+                .setInterpolator(DecelerateInterpolator(1.6f))
+                .start()
             ModuleLog.i(TAG, "panel shown")
         } catch (t: Throwable) {
             ModuleLog.e(TAG, "show failed", t)
@@ -96,6 +109,7 @@ object SettingsPanelBuilder {
         dialog: Dialog,
         container: LinearLayout,
         screen: Screen,
+        goingBack: Boolean,
         open: (Screen) -> Unit,
         back: () -> Unit
     ) {
@@ -122,6 +136,10 @@ object SettingsPanelBuilder {
         }
         scroll.addView(body)
         container.addView(scroll)
+
+        // 页面切换动画：进入二级页从右滑入，返回主页从左滑入。
+        UiKit.fadeIn(header)
+        UiKit.animateScreenIn(scroll, fromRight = !goingBack)
 
         when (screen) {
             Screen.MAIN -> buildMainMenu(activity, body, open)
@@ -490,7 +508,8 @@ object SettingsPanelBuilder {
     private fun proxySummary(): String {
         val store = Runtime.configOrNull() ?: return "配置未初始化"
         return try {
-            ProxySettings.describe(ProxySettings.current(store))
+            val base = ProxySettings.describe(ProxySettings.current(store))
+            if (configValue(ConfigKeys.APP_PROXY_ENABLED)) "$base · 含 App" else base
         } catch (_: Throwable) {
             "未知"
         }
@@ -598,13 +617,33 @@ object SettingsPanelBuilder {
 
             card.addView(UiKit.paragraph(
                 activity,
-                "认证凭据以明文保存在 Pixiv 的私有配置中，仅用于模块自身的网页请求。"
+                "认证凭据以明文保存在 Pixiv 的私有配置中，模块网页请求与 App 代理共用。"
             ))
         }
 
         card.addView(UiKit.divider(activity, 16, 16))
+        card.addView(
+            UiKit.switchRow(
+                activity,
+                "让 Pixiv App 也走此代理",
+                "接管宿主 App 的全部网络请求",
+                configValue(ConfigKeys.APP_PROXY_ENABLED)
+            ) { checked -> putConfig(ConfigKeys.APP_PROXY_ENABLED, checked) }
+        )
+        card.addView(UiKit.divider(activity, 16, 16))
+        card.addView(UiKit.paragraph(activity, appProxyHint(spec.mode)))
+
+        card.addView(UiKit.divider(activity, 16, 16))
         card.addView(UiKit.paragraph(activity, proxyHint(spec.mode)))
         card.addView(UiKit.filledButtonRow(activity, "测试代理连接") { testProxy(activity) })
+    }
+
+    private fun appProxyHint(mode: ProxyMode): String = when (mode) {
+        ProxyMode.SYSTEM -> "「跟随系统」时 App 请求本就使用系统代理，无需开启此开关。"
+        ProxyMode.DIRECT -> "开启后 App 将忽略系统代理，全部请求直连。"
+        ProxyMode.HTTP -> "开启后 App 的 OkHttp 与 HttpURLConnection 请求都会走 HTTP 代理；407 时自动附带 Basic 认证重试。"
+        ProxyMode.SOCKS4 -> "App 代理不支持 SOCKS4（Android 系统仅支持 SOCKS5），开启后 App 请求会失败。"
+        ProxyMode.SOCKS5 -> "开启后 App 的请求都会走 SOCKS5 代理；App 内暂不支持代理账号密码认证。"
     }
 
     private fun proxyHint(mode: ProxyMode): String = when (mode) {

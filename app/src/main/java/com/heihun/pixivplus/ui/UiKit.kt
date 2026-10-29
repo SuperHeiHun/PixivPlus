@@ -20,6 +20,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.view.animation.DecelerateInterpolator
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -165,6 +166,25 @@ object UiKit {
         })
         row.setOnClickListener { onClick() }
         return row
+    }
+
+    /** 页面切换动画：内容从左侧 / 右侧滑入并淡入。 */
+    fun animateScreenIn(view: View, fromRight: Boolean) {
+        val offset = dp(view.context, 48).toFloat()
+        view.translationX = if (fromRight) offset else -offset
+        view.alpha = 0f
+        view.animate()
+            .translationX(0f)
+            .alpha(1f)
+            .setDuration(240L)
+            .setInterpolator(DecelerateInterpolator(1.6f))
+            .start()
+    }
+
+    /** 轻量淡入，用于标题栏等辅助元素。 */
+    fun fadeIn(view: View, durationMs: Long = 180L) {
+        view.alpha = 0f
+        view.animate().alpha(1f).setDuration(durationMs).start()
     }
 
     /** 二级菜单入口：标题在上、说明在下，右侧箭头。 */

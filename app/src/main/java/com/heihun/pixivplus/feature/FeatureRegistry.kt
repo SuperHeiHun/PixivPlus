@@ -21,6 +21,7 @@ object FeatureRegistry {
         features.add(com.heihun.pixivplus.feature.history.BrowsingHistoryBridgeFeature())
         features.add(com.heihun.pixivplus.feature.premium.PremiumFeature())
         features.add(com.heihun.pixivplus.feature.caption.CaptionFixFeature())
+        features.add(com.heihun.pixivplus.feature.proxy.AppProxyFeature())
 
         for (feature in features) {
             try {
@@ -46,6 +47,7 @@ object FeatureRegistry {
         watchedKeys.add(ConfigKeys.PROXY_PORT)
         watchedKeys.add(ConfigKeys.PROXY_USERNAME)
         watchedKeys.add(ConfigKeys.PROXY_PASSWORD)
+        watchedKeys.add(ConfigKeys.APP_PROXY_ENABLED)
 
         for (key in watchedKeys) {
             config.addListener(key) { value ->
