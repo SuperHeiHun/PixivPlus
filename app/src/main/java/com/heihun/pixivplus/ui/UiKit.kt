@@ -167,6 +167,44 @@ object UiKit {
         return row
     }
 
+    /** 二级菜单入口：标题在上、说明在下，右侧箭头。 */
+    fun menuRow(
+        context: Context,
+        title: String,
+        subtitle: String,
+        onClick: () -> Unit
+    ): View {
+        val palette = colors(context)
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(context, 68)
+            setPadding(dp(context, 16), dp(context, 10), dp(context, 16), dp(context, 10))
+            background = rippleRect(context, palette.primary)
+            isClickable = true
+            isFocusable = true
+        }
+        val texts = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        texts.addView(bodyText(context, title, 16f, palette.onSurface))
+        if (subtitle.isNotEmpty()) {
+            texts.addView(bodyText(context, subtitle, 13f, palette.onSurfaceVariant).apply {
+                setPadding(0, dp(context, 2), 0, 0)
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            })
+        }
+        row.addView(texts)
+        row.addView(bodyText(context, "\u203A", 22f, palette.onSurfaceVariant).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(context, 12), 0, 0, 0)
+        })
+        row.setOnClickListener { onClick() }
+        return row
+    }
+
     fun infoRow(context: Context, label: String, value: String): LinearLayout {
         val palette = colors(context)
         return LinearLayout(context).apply {
