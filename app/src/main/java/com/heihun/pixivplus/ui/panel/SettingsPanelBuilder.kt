@@ -14,7 +14,6 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.DecelerateInterpolator
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -50,6 +49,8 @@ object SettingsPanelBuilder {
     fun show(activity: Activity) {
         try {
             val dialog = UiKit.dialog(activity)
+            // 面板为全屏不透明表面，去掉遮罩：避免入场动画期间遮罩先于内容闪现 / 提前消失。
+            dialog.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             val container = LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundColor(UiKit.colors(activity).surface)
@@ -88,16 +89,6 @@ object SettingsPanelBuilder {
                 }
             }
             showScreen(Screen.MAIN)
-            container.alpha = 0f
-            container.scaleX = 0.97f
-            container.scaleY = 0.97f
-            container.animate()
-                .alpha(1f)
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(200L)
-                .setInterpolator(DecelerateInterpolator(1.6f))
-                .start()
             ModuleLog.i(TAG, "panel shown")
         } catch (t: Throwable) {
             ModuleLog.e(TAG, "show failed", t)
