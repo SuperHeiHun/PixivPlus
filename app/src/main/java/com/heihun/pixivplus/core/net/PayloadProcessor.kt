@@ -23,6 +23,9 @@ object PayloadProcessor {
     var premiumEnabled: Boolean = false
 
     @Volatile
+    var captionFixEnabled: Boolean = false
+
+    @Volatile
     var detailSink: ((JSONObject, String) -> Unit)? = null
 
     @Volatile
@@ -32,6 +35,7 @@ object PayloadProcessor {
     private val filteredCount = java.util.concurrent.atomic.AtomicLong(0)
     private val workIndex = java.util.concurrent.ConcurrentHashMap<Long, WorkInfo>()
     private val authorIndex = java.util.concurrent.ConcurrentHashMap<Long, Pair<String?, String?>>()
+    private val captionIndex = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
     data class WorkInfo(
         val id: Long,
@@ -53,6 +57,25 @@ object PayloadProcessor {
 
     fun lookupWork(id: Long): WorkInfo? = workIndex[id]
 
+    fun lookupCaption(id: Long): String? {
+        val indexed = workIndex[id]?.caption
+        val cached = captionIndex[id]
+        return when {
+            indexed.isNullOrEmpty() -> cached
+            cached.isNullOrEmpty() -> indexed
+            cached.length > indexed.length -> cached
+            else -> indexed
+        }
+    }
+
+    fun rememberCaption(id: Long, caption: String?) {
+        if (id <= 0L || caption.isNullOrEmpty()) return
+        val previous = captionIndex[id]
+        if (previous != null && previous.length >= caption.length) return
+        if (captionIndex.size > 2000) captionIndex.clear()
+        captionIndex[id] = caption
+    }
+
     fun workIndexSize(): Int = workIndex.size
 
     fun process(text: String): String? {
@@ -65,7 +88,7 @@ object PayloadProcessor {
 
         val needHistory = historyEnabled && (text.contains("\"$DETAIL_KEY_ILLUST\":") || text.contains("\"$DETAIL_KEY_NOVEL\":"))
         val needPremium = premiumEnabled && text.contains("\"is_premium\"")
-        val needIndex = (historyEnabled || authorSink != null) && (
+        val needIndex = (historyEnabled || authorSink != null || captionFixEnabled) && (
             text.contains("\"$LIST_KEY_ILLUSTS\"") ||
                 text.contains("\"$LIST_KEY_NOVELS\"") ||
                 text.contains("\"$LIST_KEY_CONTENTS\"")

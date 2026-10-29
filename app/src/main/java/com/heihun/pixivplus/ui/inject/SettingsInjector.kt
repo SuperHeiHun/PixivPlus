@@ -100,7 +100,7 @@ object SettingsInjector {
             setBackgroundResource(android.R.drawable.list_selector_background)
         }
         row.addView(TextView(activity).apply {
-            text = "PixivLocalPlus"
+            text = "PixivPlus"
             setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })

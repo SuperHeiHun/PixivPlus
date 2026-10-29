@@ -105,6 +105,14 @@ object SettingsPanelBuilder {
                 configValue(ConfigKeys.ADS_REMOVAL)
             ) { checked -> putConfig(ConfigKeys.ADS_REMOVAL, checked) }
         )
+        body.addView(
+            UiKit.switchRow(
+                activity,
+                "插画简介修复",
+                "恢复因包含链接而被 Android 客户端隐藏的完整简介",
+                configValue(ConfigKeys.CAPTION_FIX)
+            ) { checked -> putConfig(ConfigKeys.CAPTION_FIX, checked) }
+        )
 
         body.addView(UiKit.sectionTitle(activity, "过滤规则"))
         body.addView(UiKit.divider(activity))
@@ -207,7 +215,7 @@ object SettingsPanelBuilder {
             setPadding(UiKit.dp(activity, 20), UiKit.dp(activity, 14), UiKit.dp(activity, 8), UiKit.dp(activity, 14))
         }
         header.addView(TextView(activity).apply {
-            text = "PixivLocalPlus"
+            text = "PixivPlus"
             setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 18f)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })

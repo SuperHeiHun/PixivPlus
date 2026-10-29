@@ -5,7 +5,7 @@ import java.util.ArrayDeque
 
 object ModuleLog {
 
-    const val TAG = "PixivLocalPlus"
+    const val TAG = "PixivPlus"
     private const val CAPACITY = 2000
     private val buffer = ArrayDeque<String>(CAPACITY)
 

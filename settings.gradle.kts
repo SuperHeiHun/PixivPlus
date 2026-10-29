@@ -16,5 +16,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PixivLocalPlus"
+rootProject.name = "PixivPlus"
 include(":app")

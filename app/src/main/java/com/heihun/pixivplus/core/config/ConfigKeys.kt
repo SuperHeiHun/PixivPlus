@@ -19,6 +19,8 @@ object ConfigKeys {
 
     val ADS_REMOVAL = ConfigKey("ads_removal", true, { it.toString() }, { it.toBoolean() })
 
+    val CAPTION_FIX = ConfigKey("caption_fix", true, { it.toString() }, { it.toBoolean() })
+
     val FILTER_KEYWORDS = ConfigKey("filter_keywords", "", { it }, { it })
 
     val FILTER_TAGS = ConfigKey("filter_tags", "", { it }, { it })

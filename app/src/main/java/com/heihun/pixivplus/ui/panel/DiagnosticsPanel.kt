@@ -83,7 +83,7 @@ object DiagnosticsPanel {
     private fun copyToClipboard(context: Context, text: String) {
         try {
             val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
-            manager.setPrimaryClip(ClipData.newPlainText("PixivLocalPlus", text))
+            manager.setPrimaryClip(ClipData.newPlainText("PixivPlus", text))
         } catch (t: Throwable) {
             ModuleLog.e("DiagnosticsPanel", "copy failed", t)
         }

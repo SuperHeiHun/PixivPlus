@@ -17,6 +17,7 @@ class PayloadProcessorTest {
         PayloadProcessor.rules = FilterRules.EMPTY
         PayloadProcessor.historyEnabled = false
         PayloadProcessor.premiumEnabled = false
+        PayloadProcessor.captionFixEnabled = false
         PayloadProcessor.detailSink = null
         PayloadProcessor.resetCounters()
     }
@@ -222,5 +223,21 @@ class PayloadProcessorTest {
             .put("contents", JSONArray().put(content("illust", 1, "one", listOf("art"), "alice")))
             .toString()
         assertNull(PayloadProcessor.process(payload))
+    }
+
+    @Test
+    fun indexesListCaptionWhenCaptionFixEnabled() {
+        PayloadProcessor.captionFixEnabled = true
+        val payload = feed(illust(9001, "one", listOf("art"), "alice", "alice"))
+        PayloadProcessor.process(payload)
+        assertEquals("caption-9001", PayloadProcessor.lookupCaption(9001))
+    }
+
+    @Test
+    fun keepsLongerCaptionWhenRemembering() {
+        PayloadProcessor.rememberCaption(9002, "short")
+        PayloadProcessor.rememberCaption(9002, "a much longer web caption")
+        PayloadProcessor.rememberCaption(9002, "tiny")
+        assertEquals("a much longer web caption", PayloadProcessor.lookupCaption(9002))
     }
 }

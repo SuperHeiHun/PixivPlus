@@ -20,6 +20,7 @@ object FeatureRegistry {
         features.add(com.heihun.pixivplus.feature.history.HistoryFeature())
         features.add(com.heihun.pixivplus.feature.history.BrowsingHistoryBridgeFeature())
         features.add(com.heihun.pixivplus.feature.premium.PremiumFeature())
+        features.add(com.heihun.pixivplus.feature.caption.CaptionFixFeature())
 
         for (feature in features) {
             try {
@@ -35,6 +36,7 @@ object FeatureRegistry {
         watchedKeys.add(ConfigKeys.FILTER_ENABLED)
         watchedKeys.add(ConfigKeys.PREMIUM_OVERRIDE)
         watchedKeys.add(ConfigKeys.ADS_REMOVAL)
+        watchedKeys.add(ConfigKeys.CAPTION_FIX)
         watchedKeys.add(ConfigKeys.FILTER_KEYWORDS)
         watchedKeys.add(ConfigKeys.FILTER_TAGS)
         watchedKeys.add(ConfigKeys.FILTER_AUTHORS)
