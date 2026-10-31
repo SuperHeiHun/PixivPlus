@@ -257,6 +257,39 @@ object SettingsPanelBuilder {
             "在小说阅读页菜单中提供保存为 PDF / TXT",
             configValue(ConfigKeys.NOVEL_SAVE_ENABLED)
         ) { checked -> putConfig(ConfigKeys.NOVEL_SAVE_ENABLED, checked) })
+        addRow(card, UiKit.switchRow(
+            activity,
+            "简介与小说翻译",
+            "详情页菜单翻译简介，小说页菜单整篇翻译正文",
+            configValue(ConfigKeys.TRANSLATE_ENABLED)
+        ) { checked -> putConfig(ConfigKeys.TRANSLATE_ENABLED, checked) })
+        val translateTargets = com.heihun.pixivplus.core.translate.Translator.TARGETS
+        var targetLabelView: TextView? = null
+        val targetRow = UiKit.selectRow(
+            activity,
+            "翻译目标语言",
+            translateTargetLabel()
+        ) {
+            val current = translateTargets.indexOfFirst { it.code == configText(ConfigKeys.TRANSLATE_TARGET) }
+            ChoiceDialog.show(
+                activity,
+                "翻译目标语言",
+                translateTargets.map { it.label },
+                if (current >= 0) current else 0
+            ) { index ->
+                putConfig(ConfigKeys.TRANSLATE_TARGET, translateTargets[index].code)
+                targetLabelView?.text = translateTargets[index].label
+            }
+        }
+        targetLabelView =
+            ((targetRow as? LinearLayout)?.getChildAt(0) as? LinearLayout)?.getChildAt(1) as? TextView
+        addRow(card, targetRow)
+        card.addView(UiKit.divider(activity, 16, 16))
+        card.addView(UiKit.paragraph(
+            activity,
+            "翻译使用 Google 翻译免费接口，请求沿用「网络代理」中的设置；" +
+                "译文会缓存在内存中，重复翻译不再请求网络。"
+        ))
         body.addView(card)
         body.addView(
             UiKit.paragraph(
@@ -314,6 +347,12 @@ object SettingsPanelBuilder {
         val enabled = configValue(ConfigKeys.NOVEL_SAVE_ENABLED)
         val folder = if (configText(ConfigKeys.NOVEL_SAVE_FOLDER_URI).isBlank()) "未选位置" else "已选位置"
         return if (enabled) "$folder · PDF / TXT" else "已关闭"
+    }
+
+    private fun translateTargetLabel(): String {
+        val store = Runtime.configOrNull()
+            ?: return com.heihun.pixivplus.core.translate.Translator.TARGETS[0].label
+        return com.heihun.pixivplus.core.translate.Translator.targetOf(store).label
     }
 
     private fun buildHistoryPage(activity: Activity, body: LinearLayout) {

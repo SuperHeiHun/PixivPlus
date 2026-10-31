@@ -7,7 +7,6 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.view.Menu
-import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -19,9 +18,11 @@ import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.config.ConfigStore
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.novel.NovelBlock
+import com.heihun.pixivplus.core.novel.NovelExtractor
 import com.heihun.pixivplus.core.novel.NovelMarkers
 import com.heihun.pixivplus.core.novel.NovelPdfWriter
 import com.heihun.pixivplus.core.net.ProxyHttp
+import com.heihun.pixivplus.core.util.MenuHooks
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.ConfigurableFeature
@@ -53,7 +54,6 @@ class NovelSaveFeature : ConfigurableFeature(
     private companion object {
         const val NOVEL_TEXT_ACTIVITY =
             "jp.pxv.android.feature.novelviewer.noveltext.NovelTextActivity"
-        const val TOOLBAR_CLASS = "com.google.android.material.appbar.MaterialToolbar"
         const val POLL_INTERVAL_MS = 700L
 
         const val ID_SAVE_PDF = 0x00f20001
@@ -68,48 +68,6 @@ class NovelSaveFeature : ConfigurableFeature(
 
         const val MIME_PDF = "application/pdf"
         const val MIME_TXT = "text/plain"
-
-        /**
-         * 从阅读页 DOM 提取有序内容 token：
-         * `x` 文本节点、`i` 图片、`n` 块级换行（<br> 与块元素边界）。
-         * 遍历整个 body，跳过隐藏元素（display:none）与注音 / 导航节点。
-         */
-        const val EXTRACT_SCRIPT = """
-(function(){
-  var out=[];
-  function visible(el){
-    try{return el.getClientRects().length>0;}catch(e){return true;}
-  }
-  function walk(node){
-    var children=node.childNodes;
-    for(var j=0;j<children.length;j++){
-      var n=children[j];
-      if(n.nodeType===3){
-        var t=n.textContent;
-        if(t&&t.trim())out.push({t:'x',s:t});
-      }else if(n.nodeType===1){
-        var tag=n.tagName;
-        if(tag==='SCRIPT'||tag==='STYLE'||tag==='NOSCRIPT'||tag==='RT'||tag==='RP'||tag==='NAV'||tag==='HEADER'||tag==='FOOTER')continue;
-        if(!visible(n))continue;
-        if(tag==='IMG'){
-          var s=n.currentSrc||n.getAttribute('src')||n.getAttribute('data-src')||'';
-          if(s)out.push({t:'i',s:s});
-          continue;
-        }
-        if(tag==='BR'){out.push({t:'n'});continue;}
-        var block=(tag==='P'||tag==='DIV'||tag==='SECTION'||tag==='FIGURE'||tag==='LI'||tag==='BLOCKQUOTE'||(tag.charAt(0)==='H'&&tag.length===2));
-        if(block)out.push({t:'n'});
-        walk(n);
-        if(block)out.push({t:'n'});
-      }
-    }
-  }
-  walk(document.body);
-  return JSON.stringify(out);
-})()
-"""
-
-        val NO_ACCESSOR = Any()
     }
 
     private class SaveException(message: String) : Exception(message)
@@ -118,10 +76,21 @@ class NovelSaveFeature : ConfigurableFeature(
     private var currentActivity: Activity? = null
 
     private val hookedMethods = Collections.newSetFromMap(ConcurrentHashMap<Method, Boolean>())
-    private val menuAccessorCache = ConcurrentHashMap<Class<*>, Any>()
 
     override fun hook(host: Host) {
-        hookToolbarListener(host)
+        MenuHooks.installClickHook(host, hookedMethods, displayName) { item ->
+            when (item.itemId) {
+                ID_SAVE_PDF -> {
+                    onClick(currentActivity, asPdf = true)
+                    true
+                }
+                ID_SAVE_TXT -> {
+                    onClick(currentActivity, asPdf = false)
+                    true
+                }
+                else -> false
+            }
+        }
         hookActivityLifecycle(host)
         ModuleLog.i(displayName, "novel save hooks installed (enabled=${isEnabled(ConfigStoreRegistry.store)})")
     }
@@ -135,8 +104,8 @@ class NovelSaveFeature : ConfigurableFeature(
             val activity = currentActivity ?: return
             try {
                 if (isEnabled(ConfigStoreRegistry.store)) {
-                    for (toolbar in findToolbars(activity.window?.decorView ?: return)) {
-                        val menu = readMenu(toolbar) ?: continue
+                    for (toolbar in MenuHooks.findToolbars(activity.window?.decorView ?: return)) {
+                        val menu = MenuHooks.readMenu(toolbar) ?: continue
                         var changed = false
                         if (menu.findItem(ID_SAVE_PDF) == null) {
                             menu.add(Menu.NONE, ID_SAVE_PDF, Menu.NONE, "保存为 PDF")
@@ -168,6 +137,8 @@ class NovelSaveFeature : ConfigurableFeature(
         if (onResume != null && hookedMethods.add(onResume)) {
             XposedBridge.hookMethod(onResume, object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
+                    // onResume 声明在公共基类上，必须校验真实类型，避免其他页面也被轮询注入。
+                    if (param.thisObject?.javaClass?.name != NOVEL_TEXT_ACTIVITY) return
                     val activity = param.thisObject as? Activity ?: return
                     currentActivity = activity
                     activity.window?.decorView?.removeCallbacks(pollTask)
@@ -179,109 +150,13 @@ class NovelSaveFeature : ConfigurableFeature(
         if (onPause != null && hookedMethods.add(onPause)) {
             XposedBridge.hookMethod(onPause, object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
+                    if (param.thisObject?.javaClass?.name != NOVEL_TEXT_ACTIVITY) return
                     val activity = param.thisObject as? Activity ?: return
                     activity.window?.decorView?.removeCallbacks(pollTask)
                     if (currentActivity === activity) currentActivity = null
                 }
             })
         }
-    }
-
-    private fun hookToolbarListener(host: Host) {
-        val toolbarClass = ReflectUtil.loadClass(host.classLoader, TOOLBAR_CLASS) ?: run {
-            ModuleLog.w(displayName, "toolbar class not found")
-            return
-        }
-        val setter = toolbarClass.methods.firstOrNull { method ->
-            method.name == "setOnMenuItemClickListener" && method.parameterCount == 1
-        }
-        if (setter == null) {
-            ModuleLog.w(displayName, "setOnMenuItemClickListener not found")
-            return
-        }
-        if (!hookedMethods.add(setter)) return
-        try {
-            XposedBridge.hookMethod(setter, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    val listener = param.args?.firstOrNull() ?: return
-                    hookListenerClick(listener.javaClass)
-                }
-            })
-            ModuleLog.i(displayName, "novel save toolbar listener hook installed")
-        } catch (t: Throwable) {
-            ModuleLog.w(displayName, "hook toolbar listener failed", t)
-        }
-    }
-
-    private fun hookListenerClick(listenerClass: Class<*>) {
-        val method = listenerClass.methods.firstOrNull { candidate ->
-            candidate.parameterCount == 1 && candidate.parameterTypes[0] == MenuItem::class.java &&
-                (candidate.returnType == Boolean::class.javaPrimitiveType || candidate.returnType == Void.TYPE)
-        } ?: return
-        if (!hookedMethods.add(method)) return
-        try {
-            XposedBridge.hookMethod(method, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    val item = param.args?.firstOrNull() as? MenuItem ?: return
-                    when (item.itemId) {
-                        ID_SAVE_PDF -> {
-                            onClick(currentActivity, asPdf = true)
-                            param.result = true
-                        }
-                        ID_SAVE_TXT -> {
-                            onClick(currentActivity, asPdf = false)
-                            param.result = true
-                        }
-                    }
-                }
-            })
-            ModuleLog.i(displayName, "novel save click hook installed on ${listenerClass.name}.${method.name}")
-        } catch (t: Throwable) {
-            ModuleLog.w(displayName, "hook menu click failed", t)
-        }
-    }
-
-    private fun findToolbars(root: View): List<View> {
-        val result = ArrayList<View>()
-        collectToolbars(root, result)
-        return result
-    }
-
-    private fun collectToolbars(root: View, out: MutableList<View>) {
-        if (hasMenuAccessor(root)) {
-            out.add(root)
-            return
-        }
-        if (root is ViewGroup) {
-            for (index in 0 until root.childCount) {
-                val child = root.getChildAt(index) ?: continue
-                collectToolbars(child, out)
-            }
-        }
-    }
-
-    private fun hasMenuAccessor(view: View): Boolean {
-        return menuAccessor(view.javaClass) != null
-    }
-
-    private fun menuAccessor(clazz: Class<*>): Method? {
-        return when (val cached = menuAccessorCache.getOrPut(clazz) {
-            try {
-                clazz.methods.firstOrNull { candidate ->
-                    candidate.parameterCount == 0 && candidate.returnType == Menu::class.java
-                } ?: NO_ACCESSOR
-            } catch (_: Throwable) {
-                NO_ACCESSOR
-            }
-        }) {
-            NO_ACCESSOR -> null
-            else -> cached as Method
-        }
-    }
-
-    private fun readMenu(toolbar: View): Menu? {
-        val method = menuAccessor(toolbar.javaClass) ?: return null
-        return ReflectUtil.invoke(toolbar, method) as? Menu
     }
 
     // ------------------------------------------------------------------
@@ -353,7 +228,7 @@ class NovelSaveFeature : ConfigurableFeature(
         }
         toast(activity, "正在读取小说内容…")
         try {
-            webView.evaluateJavascript(EXTRACT_SCRIPT) { raw ->
+            webView.evaluateJavascript(NovelExtractor.EXTRACT_SCRIPT) { raw ->
                 try {
                     val decoded = JSONTokener(raw ?: "null").nextValue()
                     val tokens = when (decoded) {
@@ -365,7 +240,7 @@ class NovelSaveFeature : ConfigurableFeature(
                         }
                         else -> null
                     }
-                    val blocks = if (tokens != null) blocksFromTokens(tokens) else emptyList()
+                    val blocks = if (tokens != null) NovelExtractor.blocksFromTokens(tokens) else emptyList()
                     if (blocks.isEmpty()) {
                         toast(activity, "未读取到小说内容，请等页面加载完成后再试")
                         return@evaluateJavascript
@@ -380,37 +255,6 @@ class NovelSaveFeature : ConfigurableFeature(
             ModuleLog.w(displayName, "extract content failed", t)
             toast(activity, "读取小说内容失败：${t.message ?: t.javaClass.simpleName}")
         }
-    }
-
-    /** DOM token → 排版块：文本合并为行，图片保持原位置顺序。 */
-    private fun blocksFromTokens(tokens: JSONArray): List<NovelBlock> {
-        val blocks = ArrayList<NovelBlock>()
-        val line = StringBuilder()
-        fun flush() {
-            val text = line.toString().trim()
-            line.setLength(0)
-            if (text.isNotEmpty()) blocks.add(NovelBlock.Text(text))
-        }
-        for (index in 0 until tokens.length()) {
-            val token = tokens.optJSONObject(index) ?: continue
-            when (token.optString("t")) {
-                "x" -> {
-                    val parts = token.optString("s").split('\n')
-                    for ((partIndex, part) in parts.withIndex()) {
-                        if (partIndex > 0) flush()
-                        line.append(part)
-                    }
-                }
-                "n" -> flush()
-                "i" -> {
-                    flush()
-                    val url = token.optString("s")
-                    if (url.startsWith("http")) blocks.add(NovelBlock.Picture(url))
-                }
-            }
-        }
-        flush()
-        return blocks
     }
 
     private fun startSave(activity: Activity, id: Long, blocks: List<NovelBlock>, asPdf: Boolean) {

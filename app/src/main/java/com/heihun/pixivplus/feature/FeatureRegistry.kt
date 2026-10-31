@@ -23,6 +23,7 @@ object FeatureRegistry {
         features.add(com.heihun.pixivplus.feature.caption.CaptionFixFeature())
         features.add(com.heihun.pixivplus.feature.proxy.AppProxyFeature())
         features.add(com.heihun.pixivplus.feature.novelsave.NovelSaveFeature())
+        features.add(com.heihun.pixivplus.feature.translate.TranslationFeature())
 
         for (feature in features) {
             try {
@@ -50,6 +51,8 @@ object FeatureRegistry {
         watchedKeys.add(ConfigKeys.PROXY_PASSWORD)
         watchedKeys.add(ConfigKeys.APP_PROXY_ENABLED)
         watchedKeys.add(ConfigKeys.NOVEL_SAVE_ENABLED)
+        watchedKeys.add(ConfigKeys.TRANSLATE_ENABLED)
+        watchedKeys.add(ConfigKeys.TRANSLATE_TARGET)
 
         for (key in watchedKeys) {
             config.addListener(key) { value ->

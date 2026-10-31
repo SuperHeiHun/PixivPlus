@@ -53,6 +53,12 @@ object ConfigKeys {
     /** 小说保存（PDF / TXT）总开关。 */
     val NOVEL_SAVE_ENABLED = ConfigKey("novel_save_enabled", true, { it.toString() }, { it.toBoolean() })
 
+    /** 简介与小说翻译总开关（使用 Google 翻译免费接口，走模块代理设置）。 */
+    val TRANSLATE_ENABLED = ConfigKey("translate_enabled", false, { it.toString() }, { it.toBoolean() })
+
+    /** 翻译目标语言代码，如 zh-CN / zh-TW / en / ja / ko。 */
+    val TRANSLATE_TARGET = ConfigKey("translate_target", "zh-CN", { it }, { it })
+
     /** 小说保存位置的 SAF tree URI，首次保存时由用户选择，仅保留在当前设备。 */
     val NOVEL_SAVE_FOLDER_URI = ConfigKey("novel_save_folder_uri", "", { it }, { it })
 
