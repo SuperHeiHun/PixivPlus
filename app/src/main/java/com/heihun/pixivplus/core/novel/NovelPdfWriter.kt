@@ -34,7 +34,7 @@ object NovelPdfWriter {
         sourceUrl: String,
         blocks: List<NovelBlock>,
         images: Map<String, Bitmap?>,
-        labels: Map<NovelBlock.Image, Int>
+        labels: Map<NovelBlock, Int>
     ): ByteArray {
         val document = PdfDocument()
         try {
@@ -155,6 +155,15 @@ object NovelPdfWriter {
                     is NovelBlock.Text -> drawLine(block.line, textPaint, 0f, 2f)
                     is NovelBlock.Link -> drawLine("${block.title} (${block.url})", textPaint, 0f, 2f)
                     is NovelBlock.Image -> {
+                        val label = labels[block] ?: 1
+                        val bitmap = images[NovelMarkers.imageKey(block)]
+                        if (bitmap != null) {
+                            drawImage(bitmap, label)
+                        } else {
+                            drawLine("【插图 $label（下载失败）】", captionPaint, 6f, 6f)
+                        }
+                    }
+                    is NovelBlock.Picture -> {
                         val label = labels[block] ?: 1
                         val bitmap = images[NovelMarkers.imageKey(block)]
                         if (bitmap != null) {

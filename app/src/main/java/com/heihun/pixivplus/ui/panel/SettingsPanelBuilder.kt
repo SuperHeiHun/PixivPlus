@@ -293,7 +293,8 @@ object SettingsPanelBuilder {
         card.addView(UiKit.paragraph(
             activity,
             "首次保存时必须先选择保存位置；文件名格式为「小说_标题_作品ID.pdf / .txt」。" +
-                "保存位置只保留在本机，不写入备份。正文通过网页版接口获取，网络请求沿用代理设置。"
+                "保存位置只保留在本机，不写入备份。正文直接从阅读页提取，不额外请求网络；" +
+                "PDF 中的插图会按需下载（沿用代理设置）。"
         ))
         body.addView(card)
     }

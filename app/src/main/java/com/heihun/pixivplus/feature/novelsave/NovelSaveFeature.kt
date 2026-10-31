@@ -6,10 +6,17 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.view.Menu
+import android.view.MenuItem
+import android.view.View
+import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.WebView
 import android.widget.Toast
 import com.heihun.pixivplus.core.Host
+import com.heihun.pixivplus.core.WorkContext
 import com.heihun.pixivplus.core.config.ConfigKeys
+import com.heihun.pixivplus.core.config.ConfigStore
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.novel.NovelBlock
 import com.heihun.pixivplus.core.novel.NovelMarkers
@@ -21,19 +28,21 @@ import com.heihun.pixivplus.feature.ConfigurableFeature
 import com.heihun.pixivplus.ui.ActivityResultBridge
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
-import org.json.JSONObject
+import org.json.JSONArray
+import org.json.JSONTokener
 import java.lang.reflect.Method
+import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Collections
-import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 在小说阅读页的工具栏菜单中提供「保存为 PDF」「保存为 TXT」。
  *
- * 正文来自网页版 `ajax/novel/{id}`（含 [newpage] / [chapter] / 插图标记）；
- * PDF 兼容带插图的作品，TXT 只保留文本。首次保存时通过系统文件夹选择器
- * 让用户选择保存位置（SAF tree URI，持久授权），之后沿用该位置。
+ * 正文直接从阅读页已加载的 WebView DOM 中提取（不依赖额外网络请求，
+ * 登录限定 / R-18 作品同样可用）；PDF 兼容带插图的作品，TXT 只保留文本。
+ * 首次保存时通过系统文件夹选择器让用户选择保存位置（SAF tree URI，
+ * 持久授权），之后沿用该位置。
  */
 class NovelSaveFeature : ConfigurableFeature(
     "novel_save",
@@ -50,32 +59,60 @@ class NovelSaveFeature : ConfigurableFeature(
         const val ID_SAVE_PDF = 0x00f20001
         const val ID_SAVE_TXT = 0x00f20002
 
-        const val WEB_API_NOVEL = "https://www.pixiv.net/ajax/novel/%d?lang=zh"
-        const val WEB_API_ILLUST = "https://www.pixiv.net/ajax/illust/%d?lang=zh"
         const val WEB_REFERER = "https://www.pixiv.net/"
         const val WEB_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-        const val MAX_JSON_CHARS = 4 * 1024 * 1024
         const val MAX_IMAGE_BYTES = 24 * 1024 * 1024
         const val MAX_IMAGES = 60
 
         const val MIME_PDF = "application/pdf"
         const val MIME_TXT = "text/plain"
 
+        /**
+         * 从阅读页 DOM 提取有序内容 token：
+         * `x` 文本节点、`i` 图片、`n` 块级换行（<br> 与块元素边界）。
+         * 遍历整个 body，跳过隐藏元素（display:none）与注音 / 导航节点。
+         */
+        const val EXTRACT_SCRIPT = """
+(function(){
+  var out=[];
+  function visible(el){
+    try{return el.getClientRects().length>0;}catch(e){return true;}
+  }
+  function walk(node){
+    var children=node.childNodes;
+    for(var j=0;j<children.length;j++){
+      var n=children[j];
+      if(n.nodeType===3){
+        var t=n.textContent;
+        if(t&&t.trim())out.push({t:'x',s:t});
+      }else if(n.nodeType===1){
+        var tag=n.tagName;
+        if(tag==='SCRIPT'||tag==='STYLE'||tag==='NOSCRIPT'||tag==='RT'||tag==='RP'||tag==='NAV'||tag==='HEADER'||tag==='FOOTER')continue;
+        if(!visible(n))continue;
+        if(tag==='IMG'){
+          var s=n.currentSrc||n.getAttribute('src')||n.getAttribute('data-src')||'';
+          if(s)out.push({t:'i',s:s});
+          continue;
+        }
+        if(tag==='BR'){out.push({t:'n'});continue;}
+        var block=(tag==='P'||tag==='DIV'||tag==='SECTION'||tag==='FIGURE'||tag==='LI'||tag==='BLOCKQUOTE'||(tag.charAt(0)==='H'&&tag.length===2));
+        if(block)out.push({t:'n'});
+        walk(n);
+        if(block)out.push({t:'n'});
+      }
+    }
+  }
+  walk(document.body);
+  return JSON.stringify(out);
+})()
+"""
+
         val NO_ACCESSOR = Any()
     }
 
     private class SaveException(message: String) : Exception(message)
-
-    private data class NovelData(
-        val id: Long,
-        val title: String,
-        val author: String,
-        val createDate: String,
-        val content: String,
-        val embedded: JSONObject?
-    )
 
     @Volatile
     private var currentActivity: Activity? = null
@@ -97,20 +134,21 @@ class NovelSaveFeature : ConfigurableFeature(
         override fun run() {
             val activity = currentActivity ?: return
             try {
-                if (!isEnabled(ConfigStoreRegistry.store)) return
-                for (toolbar in findToolbars(activity.window?.decorView ?: return)) {
-                    val menu = readMenu(toolbar) ?: continue
-                    var changed = false
-                    if (menu.findItem(ID_SAVE_PDF) == null) {
-                        menu.add(android.view.Menu.NONE, ID_SAVE_PDF, android.view.Menu.NONE, "保存为 PDF")
-                        changed = true
-                    }
-                    if (menu.findItem(ID_SAVE_TXT) == null) {
-                        menu.add(android.view.Menu.NONE, ID_SAVE_TXT, android.view.Menu.NONE, "保存为 TXT")
-                        changed = true
-                    }
-                    if (changed) {
-                        ModuleLog.i(displayName, "novel save menu added (total=${menu.size()})")
+                if (isEnabled(ConfigStoreRegistry.store)) {
+                    for (toolbar in findToolbars(activity.window?.decorView ?: return)) {
+                        val menu = readMenu(toolbar) ?: continue
+                        var changed = false
+                        if (menu.findItem(ID_SAVE_PDF) == null) {
+                            menu.add(Menu.NONE, ID_SAVE_PDF, Menu.NONE, "保存为 PDF")
+                            changed = true
+                        }
+                        if (menu.findItem(ID_SAVE_TXT) == null) {
+                            menu.add(Menu.NONE, ID_SAVE_TXT, Menu.NONE, "保存为 TXT")
+                            changed = true
+                        }
+                        if (changed) {
+                            ModuleLog.i(displayName, "novel save menu added (total=${menu.size()})")
+                        }
                     }
                 }
             } catch (t: Throwable) {
@@ -177,14 +215,14 @@ class NovelSaveFeature : ConfigurableFeature(
 
     private fun hookListenerClick(listenerClass: Class<*>) {
         val method = listenerClass.methods.firstOrNull { candidate ->
-            candidate.parameterCount == 1 && candidate.parameterTypes[0] == android.view.MenuItem::class.java &&
+            candidate.parameterCount == 1 && candidate.parameterTypes[0] == MenuItem::class.java &&
                 (candidate.returnType == Boolean::class.javaPrimitiveType || candidate.returnType == Void.TYPE)
         } ?: return
         if (!hookedMethods.add(method)) return
         try {
             XposedBridge.hookMethod(method, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    val item = param.args?.firstOrNull() as? android.view.MenuItem ?: return
+                    val item = param.args?.firstOrNull() as? MenuItem ?: return
                     when (item.itemId) {
                         ID_SAVE_PDF -> {
                             onClick(currentActivity, asPdf = true)
@@ -203,18 +241,18 @@ class NovelSaveFeature : ConfigurableFeature(
         }
     }
 
-    private fun findToolbars(root: android.view.View): List<android.view.View> {
-        val result = ArrayList<android.view.View>()
+    private fun findToolbars(root: View): List<View> {
+        val result = ArrayList<View>()
         collectToolbars(root, result)
         return result
     }
 
-    private fun collectToolbars(root: android.view.View, out: MutableList<android.view.View>) {
+    private fun collectToolbars(root: View, out: MutableList<View>) {
         if (hasMenuAccessor(root)) {
             out.add(root)
             return
         }
-        if (root is android.view.ViewGroup) {
+        if (root is ViewGroup) {
             for (index in 0 until root.childCount) {
                 val child = root.getChildAt(index) ?: continue
                 collectToolbars(child, out)
@@ -222,7 +260,7 @@ class NovelSaveFeature : ConfigurableFeature(
         }
     }
 
-    private fun hasMenuAccessor(view: android.view.View): Boolean {
+    private fun hasMenuAccessor(view: View): Boolean {
         return menuAccessor(view.javaClass) != null
     }
 
@@ -230,7 +268,7 @@ class NovelSaveFeature : ConfigurableFeature(
         return when (val cached = menuAccessorCache.getOrPut(clazz) {
             try {
                 clazz.methods.firstOrNull { candidate ->
-                    candidate.parameterCount == 0 && candidate.returnType == android.view.Menu::class.java
+                    candidate.parameterCount == 0 && candidate.returnType == Menu::class.java
                 } ?: NO_ACCESSOR
             } catch (_: Throwable) {
                 NO_ACCESSOR
@@ -241,9 +279,9 @@ class NovelSaveFeature : ConfigurableFeature(
         }
     }
 
-    private fun readMenu(toolbar: android.view.View): android.view.Menu? {
+    private fun readMenu(toolbar: View): Menu? {
         val method = menuAccessor(toolbar.javaClass) ?: return null
-        return ReflectUtil.invoke(toolbar, method) as? android.view.Menu
+        return ReflectUtil.invoke(toolbar, method) as? Menu
     }
 
     // ------------------------------------------------------------------
@@ -258,9 +296,13 @@ class NovelSaveFeature : ConfigurableFeature(
             toast(activity, "未获取到当前小说 ID")
             return
         }
-        val store = ConfigStoreRegistry.store
+        val webView = findWebView(activity.window?.decorView)
+        if (webView == null) {
+            toast(activity, "未找到小说内容，请返回后重新进入阅读页")
+            return
+        }
         val folder = try {
-            store.get(ConfigKeys.NOVEL_SAVE_FOLDER_URI)
+            ConfigStoreRegistry.store.get(ConfigKeys.NOVEL_SAVE_FOLDER_URI)
         } catch (_: Throwable) {
             ""
         }
@@ -272,16 +314,16 @@ class NovelSaveFeature : ConfigurableFeature(
                     return@pickFolder
                 }
                 try {
-                    store.put(ConfigKeys.NOVEL_SAVE_FOLDER_URI, uri.toString())
+                    ConfigStoreRegistry.store.put(ConfigKeys.NOVEL_SAVE_FOLDER_URI, uri.toString())
                 } catch (t: Throwable) {
                     ModuleLog.w(displayName, "store save folder failed", t)
                 }
                 toast(resultActivity, "已选择保存位置")
-                runSave(resultActivity, id, asPdf)
+                extractAndSave(resultActivity, id, asPdf)
             }
             return
         }
-        runSave(activity, id, asPdf)
+        extractAndSave(activity, id, asPdf)
     }
 
     private fun novelId(activity: Activity): Long {
@@ -292,14 +334,96 @@ class NovelSaveFeature : ConfigurableFeature(
         }
     }
 
-    private fun runSave(activity: Activity, id: Long, asPdf: Boolean) {
-        toast(activity, "正在保存…")
+    private fun findWebView(root: View?): WebView? {
+        if (root == null) return null
+        if (root is WebView) return root
+        if (root is ViewGroup) {
+            for (index in 0 until root.childCount) {
+                findWebView(root.getChildAt(index))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun extractAndSave(activity: Activity, id: Long, asPdf: Boolean) {
+        val webView = findWebView(activity.window?.decorView)
+        if (webView == null) {
+            toast(activity, "未找到小说内容，请返回后重新进入阅读页")
+            return
+        }
+        toast(activity, "正在读取小说内容…")
+        try {
+            webView.evaluateJavascript(EXTRACT_SCRIPT) { raw ->
+                try {
+                    val decoded = JSONTokener(raw ?: "null").nextValue()
+                    val tokens = when (decoded) {
+                        is JSONArray -> decoded
+                        is String -> try {
+                            JSONArray(decoded)
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        else -> null
+                    }
+                    val blocks = if (tokens != null) blocksFromTokens(tokens) else emptyList()
+                    if (blocks.isEmpty()) {
+                        toast(activity, "未读取到小说内容，请等页面加载完成后再试")
+                        return@evaluateJavascript
+                    }
+                    startSave(activity, id, blocks, asPdf)
+                } catch (t: Throwable) {
+                    ModuleLog.w(displayName, "parse extracted content failed", t)
+                    toast(activity, "解析小说内容失败：${t.message ?: t.javaClass.simpleName}")
+                }
+            }
+        } catch (t: Throwable) {
+            ModuleLog.w(displayName, "extract content failed", t)
+            toast(activity, "读取小说内容失败：${t.message ?: t.javaClass.simpleName}")
+        }
+    }
+
+    /** DOM token → 排版块：文本合并为行，图片保持原位置顺序。 */
+    private fun blocksFromTokens(tokens: JSONArray): List<NovelBlock> {
+        val blocks = ArrayList<NovelBlock>()
+        val line = StringBuilder()
+        fun flush() {
+            val text = line.toString().trim()
+            line.setLength(0)
+            if (text.isNotEmpty()) blocks.add(NovelBlock.Text(text))
+        }
+        for (index in 0 until tokens.length()) {
+            val token = tokens.optJSONObject(index) ?: continue
+            when (token.optString("t")) {
+                "x" -> {
+                    val parts = token.optString("s").split('\n')
+                    for ((partIndex, part) in parts.withIndex()) {
+                        if (partIndex > 0) flush()
+                        line.append(part)
+                    }
+                }
+                "n" -> flush()
+                "i" -> {
+                    flush()
+                    val url = token.optString("s")
+                    if (url.startsWith("http")) blocks.add(NovelBlock.Picture(url))
+                }
+            }
+        }
+        flush()
+        return blocks
+    }
+
+    private fun startSave(activity: Activity, id: Long, blocks: List<NovelBlock>, asPdf: Boolean) {
+        toast(activity, "正在生成${if (asPdf) " PDF" else " TXT"}…")
         val appContext = activity.applicationContext
+        val snapshot = WorkContext.current?.takeIf { it.id == id }
+        val title = snapshot?.title?.takeIf { it.isNotBlank() } ?: "novel_$id"
+        val author = snapshot?.authorName.orEmpty()
         Thread({
             var result: String? = null
             var error: String? = null
             try {
-                result = save(appContext, id, asPdf)
+                result = save(appContext, id, title, author, blocks, asPdf)
                 ModuleLog.i(displayName, "novel saved id=$id pdf=$asPdf file=$result")
             } catch (t: Throwable) {
                 error = t.message ?: t.javaClass.simpleName
@@ -309,7 +433,7 @@ class NovelSaveFeature : ConfigurableFeature(
                 if (result != null) {
                     toast(activity, "已保存：$result")
                 } else {
-                    toast(activity, "保存失败：$error")
+                    toast(activity, "保存失败：${error ?: "未知错误"}")
                 }
             }
         }, "plp-novel-save").apply { isDaemon = true }.start()
@@ -322,25 +446,28 @@ class NovelSaveFeature : ConfigurableFeature(
         }
     }
 
-    private fun save(context: Context, id: Long, asPdf: Boolean): String {
+    private fun save(
+        context: Context,
+        id: Long,
+        title: String,
+        author: String,
+        blocks: List<NovelBlock>,
+        asPdf: Boolean
+    ): String {
         val store = ConfigStoreRegistry.store
         val treeUriText = store.get(ConfigKeys.NOVEL_SAVE_FOLDER_URI)
         if (treeUriText.isBlank()) throw SaveException("尚未选择保存位置")
         val treeUri = Uri.parse(treeUriText)
 
-        val novel = fetchNovel(store, id)
-            ?: throw SaveException("获取正文失败：${ProxyHttp.lastFailureReason() ?: "网络请求失败"}")
-        val blocks = NovelMarkers.parse(novel.content)
-        if (blocks.isEmpty()) throw SaveException("正文为空")
         val sourceUrl = "https://www.pixiv.net/novel/show.php?id=$id"
-        val fileName = "小说_${NovelMarkers.safeFileName(novel.title, "novel_$id")}_$id"
+        val fileName = "小说_${NovelMarkers.safeFileName(title, "novel_$id")}_$id"
 
         if (asPdf) {
             val labels = NovelMarkers.imageLabels(blocks)
-            val images = downloadImages(store, novel, blocks)
+            val images = downloadImages(store, blocks)
             val bytes = NovelPdfWriter.write(
-                title = novel.title,
-                author = novel.author,
+                title = title,
+                author = author,
                 sourceUrl = sourceUrl,
                 blocks = blocks,
                 images = images,
@@ -349,23 +476,93 @@ class NovelSaveFeature : ConfigurableFeature(
             writeDocument(context, treeUri, "$fileName.pdf", MIME_PDF, bytes)
             return "$fileName.pdf"
         }
-        val text = NovelMarkers.toPlainText(novel.title, novel.author, sourceUrl, blocks)
+        val text = NovelMarkers.toPlainText(title, author, sourceUrl, blocks)
         writeDocument(context, treeUri, "$fileName.txt", MIME_TXT, text.toByteArray(Charsets.UTF_8))
         return "$fileName.txt"
     }
 
     // ------------------------------------------------------------------
-    // 数据获取
+    // 图片下载（PDF 用）
     // ------------------------------------------------------------------
 
-    private fun webHeaders(cookie: String?): Map<String, String> {
+    private fun downloadImages(store: ConfigStore, blocks: List<NovelBlock>): Map<String, Bitmap?> {
+        val result = HashMap<String, Bitmap?>()
+        val seen = HashSet<String>()
+        var count = 0
+        for (block in blocks) {
+            if (block !is NovelBlock.Picture) continue
+            if (count >= MAX_IMAGES) break
+            count++
+            val key = NovelMarkers.imageKey(block)
+            if (!seen.add(key)) continue
+            result[key] = downloadBitmapAny(store, block.url)
+        }
+        return result
+    }
+
+    /** 优先走模块网络栈（含代理设置），失败时退回宿主网络栈（系统 / App 代理）。 */
+    private fun downloadBitmapAny(store: ConfigStore, url: String): Bitmap? {
+        downloadBitmap(store, url)?.let { return it }
+        return downloadBitmapHost(url)
+    }
+
+    private fun downloadBitmap(store: ConfigStore, url: String): Bitmap? {
+        val response = try {
+            ProxyHttp.getBytes(
+                store = store,
+                url = URL(url),
+                headers = imageHeaders(),
+                maxBytes = MAX_IMAGE_BYTES
+            )
+        } catch (t: Throwable) {
+            ModuleLog.w(displayName, "module image request failed: ${t.javaClass.simpleName}")
+            null
+        } ?: return null
+        if (response.code != 200) {
+            ModuleLog.w(displayName, "module image http ${response.code} $url")
+            return null
+        }
+        val bitmap = BitmapFactory.decodeByteArray(response.bytes, 0, response.bytes.size)
+        if (bitmap == null) {
+            ModuleLog.w(displayName, "module image decode failed $url")
+        }
+        return bitmap
+    }
+
+    private fun downloadBitmapHost(url: String): Bitmap? {
+        var connection: HttpURLConnection? = null
+        return try {
+            connection = URL(url).openConnection() as HttpURLConnection
+            connection.connectTimeout = 8000
+            connection.readTimeout = 20000
+            connection.setRequestProperty("Referer", WEB_REFERER)
+            connection.setRequestProperty("User-Agent", WEB_UA)
+            webCookie()?.let { connection.setRequestProperty("Cookie", it) }
+            if (connection.responseCode !in 200..299) {
+                ModuleLog.w(displayName, "host image http ${connection.responseCode} $url")
+                null
+            } else {
+                val bytes = connection.inputStream.use { it.readBytes() }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }
+        } catch (t: Throwable) {
+            ModuleLog.w(displayName, "host image download failed: ${t.javaClass.simpleName}: ${t.message}")
+            null
+        } finally {
+            try {
+                connection?.disconnect()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    private fun imageHeaders(): Map<String, String> {
         val headers = linkedMapOf(
             "Referer" to WEB_REFERER,
             "User-Agent" to WEB_UA,
-            "Accept" to "application/json, text/plain, */*",
-            "Accept-Language" to "zh-CN,zh;q=0.9,ja;q=0.8,en;q=0.7"
+            "Accept" to "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
         )
-        if (!cookie.isNullOrEmpty()) headers["Cookie"] = cookie
+        webCookie()?.let { headers["Cookie"] = it }
         return headers
     }
 
@@ -376,128 +573,6 @@ class NovelSaveFeature : ConfigurableFeature(
             ModuleLog.d(displayName, "read web cookie failed: ${t.javaClass.simpleName}")
             null
         }
-    }
-
-    private fun fetchNovel(store: com.heihun.pixivplus.core.config.ConfigStore, id: Long): NovelData? {
-        val response = ProxyHttp.get(
-            store = store,
-            url = URL(String.format(Locale.ROOT, WEB_API_NOVEL, id)),
-            headers = webHeaders(webCookie()),
-            maxBodyChars = MAX_JSON_CHARS
-        ) ?: return null
-        if (response.code != 200) {
-            ModuleLog.w(displayName, "novel fetch http ${response.code} id=$id")
-            return null
-        }
-        val root = JSONObject(response.body)
-        if (root.optBoolean("error", false)) {
-            ModuleLog.w(displayName, "novel fetch error id=$id message=${root.optString("message")}")
-            return null
-        }
-        val body = root.optJSONObject("body") ?: return null
-        val content = body.optString("content").ifBlank { return null }
-        return NovelData(
-            id = id,
-            title = body.optString("title").ifBlank { "novel_$id" },
-            author = body.optString("userName").ifBlank { "未知作者" },
-            createDate = body.optString("createDate"),
-            content = content,
-            embedded = body.optJSONObject("textEmbeddedImages")
-        )
-    }
-
-    private fun downloadImages(
-        store: com.heihun.pixivplus.core.config.ConfigStore,
-        novel: NovelData,
-        blocks: List<NovelBlock>
-    ): Map<String, Bitmap?> {
-        val result = HashMap<String, Bitmap?>()
-        val seen = HashSet<String>()
-        var count = 0
-        for (block in blocks) {
-            if (block !is NovelBlock.Image) continue
-            if (count >= MAX_IMAGES) break
-            count++
-            val key = NovelMarkers.imageKey(block)
-            if (!seen.add(key)) continue
-            result[key] = try {
-                val url = resolveImageUrl(store, novel, block)
-                if (url == null) {
-                    ModuleLog.w(displayName, "image url resolve failed key=$key")
-                    null
-                } else {
-                    downloadBitmap(store, url)
-                }
-            } catch (t: Throwable) {
-                ModuleLog.w(displayName, "image download failed key=$key", t)
-                null
-            }
-        }
-        return result
-    }
-
-    private fun resolveImageUrl(
-        store: com.heihun.pixivplus.core.config.ConfigStore,
-        novel: NovelData,
-        block: NovelBlock.Image
-    ): String? {
-        return when (block.kind) {
-            NovelBlock.Image.ImageKind.UPLOADED -> {
-                val entry = novel.embedded?.optJSONObject(block.markerId)
-                val urls = entry?.optJSONObject("urls")
-                urls?.optString("original")?.takeIf { it.isNotBlank() }
-                    ?: urls?.optString("1200x1200")?.takeIf { it.isNotBlank() }
-                    ?: urls?.optString("480mw")?.takeIf { it.isNotBlank() }
-                    ?: urls?.optString("240mw")?.takeIf { it.isNotBlank() }
-            }
-            NovelBlock.Image.ImageKind.PIXIV -> resolvePixivImageUrl(store, block)
-        }
-    }
-
-    /** `ajax/illust/{id}` 拿第 1 页 URL；多页时把 `_p0` 替换为目标页码。 */
-    private fun resolvePixivImageUrl(
-        store: com.heihun.pixivplus.core.config.ConfigStore,
-        block: NovelBlock.Image
-    ): String? {
-        val illustId = block.markerId
-        val response = ProxyHttp.get(
-            store = store,
-            url = URL(String.format(Locale.ROOT, WEB_API_ILLUST, illustId.toLong())),
-            headers = webHeaders(webCookie()),
-            maxBodyChars = MAX_JSON_CHARS
-        ) ?: return null
-        if (response.code != 200) return null
-        val root = JSONObject(response.body)
-        if (root.optBoolean("error", false)) return null
-        val body = root.optJSONObject("body") ?: return null
-        val base = body.optJSONObject("urls")?.optString("regular")?.takeIf { it.isNotBlank() }
-            ?: body.optJSONObject("urls")?.optString("original")?.takeIf { it.isNotBlank() }
-            ?: body.optJSONObject("metaSinglePage")?.optString("original_image_url")?.takeIf { it.isNotBlank() }
-            ?: return null
-        val page = block.page.coerceAtLeast(1)
-        if (page <= 1) return base
-        return if (base.contains("_p0.")) base.replaceFirst("_p0.", "_p${page - 1}.") else base
-    }
-
-    private fun downloadBitmap(
-        store: com.heihun.pixivplus.core.config.ConfigStore,
-        url: String
-    ): Bitmap? {
-        val response = ProxyHttp.getBytes(
-            store = store,
-            url = URL(url),
-            headers = webHeaders(webCookie()),
-            maxBytes = MAX_IMAGE_BYTES
-        ) ?: return null
-        if (response.code != 200) {
-            ModuleLog.w(displayName, "image http ${response.code} $url")
-            return null
-        }
-        val bitmap = BitmapFactory.decodeByteArray(response.bytes, 0, response.bytes.size)
-        if (bitmap == null) {
-            ModuleLog.w(displayName, "image decode failed $url")
-        }
-        return bitmap
     }
 
     // ------------------------------------------------------------------

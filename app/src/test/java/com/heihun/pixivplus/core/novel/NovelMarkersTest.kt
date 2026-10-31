@@ -83,6 +83,22 @@ class NovelMarkersTest {
     }
 
     @Test
+    fun `picture blocks participate in labels and keys`() {
+        val blocks = listOf(
+            NovelBlock.Picture("https://i.pximg.net/a.jpg"),
+            NovelBlock.Text("x"),
+            NovelBlock.Picture("https://i.pximg.net/b.jpg")
+        )
+        val labels = NovelMarkers.imageLabels(blocks)
+        assertEquals(1, labels[blocks[0]])
+        assertEquals(2, labels[blocks[2]])
+        assertEquals("u:https://i.pximg.net/a.jpg", NovelMarkers.imageKey(blocks[0]))
+        val text = NovelMarkers.toPlainText("t", "a", "u", blocks)
+        assertTrue(text.contains("[插图 1]"))
+        assertTrue(text.contains("[插图 2]"))
+    }
+
+    @Test
     fun `trims blank lines at both ends`() {
         val blocks = NovelMarkers.parse("\n\n\n  \n正文\n\n\n")
         assertEquals(listOf(NovelBlock.Text("正文")), blocks)

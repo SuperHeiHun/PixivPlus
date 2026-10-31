@@ -1,9 +1,10 @@
 package com.heihun.pixivplus.core.novel
 
 /**
- * pixiv 小说正文的标记块模型。
+ * pixiv 小说正文的排版块模型。
  *
- * 正文来自网页版 `ajax/novel/{id}` 的 `content` 字段，常用标记：
+ * 当前运行路径从阅读页 WebView DOM 提取（[NovelBlock.Picture]）；
+ * [NovelMarkers.parse] 同时保留对网页版 `ajax/novel/{id}` 正文标记的解析能力：
  * - `[newpage]` 分页
  * - `[chapter:标题]` 章节标题
  * - `[uploadedimage:图片ID]` 随作品上传的插图（URL 在 `textEmbeddedImages`）
@@ -31,6 +32,9 @@ sealed class NovelBlock {
     ) : NovelBlock() {
         enum class ImageKind { UPLOADED, PIXIV }
     }
+
+    /** 从阅读页 DOM 提取的插图，markerId 即图片 URL。 */
+    data class Picture(val url: String) : NovelBlock()
 
     /** 外部链接。 */
     data class Link(val title: String, val url: String) : NovelBlock()
@@ -122,17 +126,18 @@ object NovelMarkers {
                 is NovelBlock.Text -> builder.append(block.line).append('\n')
                 is NovelBlock.Link -> builder.append(block.title).append(" (").append(block.url).append(")\n")
                 is NovelBlock.Image -> builder.append("[插图 ").append(imageLabel(blocks, block)).append("]\n")
+                is NovelBlock.Picture -> builder.append("[插图 ").append(imageLabel(blocks, block)).append("]\n")
             }
         }
         return builder.toString().trimEnd() + "\n"
     }
 
     /** 插图序号（按出现顺序从 1 开始），用于 TXT 占位与 PDF 图注。 */
-    fun imageLabels(blocks: List<NovelBlock>): Map<NovelBlock.Image, Int> {
-        val labels = HashMap<NovelBlock.Image, Int>()
+    fun imageLabels(blocks: List<NovelBlock>): Map<NovelBlock, Int> {
+        val labels = HashMap<NovelBlock, Int>()
         var next = 1
         for (block in blocks) {
-            if (block is NovelBlock.Image) {
+            if (block is NovelBlock.Image || block is NovelBlock.Picture) {
                 labels[block] = next
                 next++
             }
@@ -140,7 +145,7 @@ object NovelMarkers {
         return labels
     }
 
-    private fun imageLabel(blocks: List<NovelBlock>, target: NovelBlock.Image): Int =
+    private fun imageLabel(blocks: List<NovelBlock>, target: NovelBlock): Int =
         imageLabels(blocks)[target] ?: 1
 
     /** 清理文件名中的非法字符并限制长度。 */
@@ -155,9 +160,13 @@ object NovelMarkers {
         return cleaned.ifEmpty { fallback }
     }
 
-    /** 插图缓存键：随作品上传用 novelImageId，引用插画用作品 ID + 页码。 */
-    fun imageKey(block: NovelBlock.Image): String = when (block.kind) {
-        NovelBlock.Image.ImageKind.UPLOADED -> "up:${block.markerId}"
-        NovelBlock.Image.ImageKind.PIXIV -> "px:${block.markerId}:${block.page}"
+    /** 插图缓存键：随作品上传用 novelImageId，引用插画用作品 ID + 页码，DOM 提取用 URL。 */
+    fun imageKey(block: NovelBlock): String = when (block) {
+        is NovelBlock.Image -> when (block.kind) {
+            NovelBlock.Image.ImageKind.UPLOADED -> "up:${block.markerId}"
+            NovelBlock.Image.ImageKind.PIXIV -> "px:${block.markerId}:${block.page}"
+        }
+        is NovelBlock.Picture -> "u:${block.url}"
+        else -> throw IllegalArgumentException("not an image block: $block")
     }
 }
