@@ -12,8 +12,10 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.heihun.pixivplus.core.Host
+import com.heihun.pixivplus.core.WorkContext
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.log.ModuleLog
+import com.heihun.pixivplus.core.net.PayloadProcessor
 import com.heihun.pixivplus.core.novel.NovelExtractor
 import com.heihun.pixivplus.core.translate.Translator
 import com.heihun.pixivplus.core.util.EntityReader
@@ -177,7 +179,7 @@ class TranslationFeature : ConfigurableFeature(
         if (!isEnabled(ConfigStoreRegistry.store)) return
         val caption = currentCaption(activity)
         if (caption.isNullOrBlank()) {
-            toast(activity, "未获取到当前简介")
+            toast(activity, "未获取到当前简介，请等简介加载后重试")
             return
         }
         val holder = captionDialog(activity, "正在翻译…")
@@ -202,7 +204,12 @@ class TranslationFeature : ConfigurableFeature(
 
     /**
      * 读取当前详情页简介（去除 HTML 标记），失败返回 null。
-     * 翻页详情优先取 ViewPager 当前页的作品，避免滑动后读到相邻页 / 复用页的简介。
+     *
+     * 三段回退：
+     * 1. 翻页详情优先取 ViewPager 当前页的实体简介；
+     * 2. 被屏蔽简介的作品实体里 caption 为空（简介修复只把恢复文本渲染到
+     *    TextView，不回写实体），因此再读视图上已渲染的文本；
+     * 3. 仍为空时查本地简介索引（简介修复的缓存）。
      */
     private fun currentCaption(activity: Activity): String? {
         return try {
@@ -212,13 +219,67 @@ class TranslationFeature : ConfigurableFeature(
                     stripHtml(raw).trim().ifEmpty { null }?.let { return it }
                 }
             }
-            val view = findCaptionView(activity.window?.decorView) ?: return null
-            val entity = ReflectUtil.readField(view, "f") ?: return null
-            val raw = EntityReader.caption(entity) ?: return null
-            stripHtml(raw).trim().ifEmpty { null }
+            val currentId = WorkContext.current?.id ?: DetailPagerResolver.currentIllustId(activity)
+            for (view in findCaptionViews(activity.window?.decorView)) {
+                val entityId = ReflectUtil.readField(view, "f")?.let { entity -> idOf(entity) }
+                if (currentId != null && entityId != null && entityId != currentId) continue
+                val rendered = captionTextFromView(view) ?: continue
+                stripHtml(rendered).trim().ifEmpty { null }?.let { return it }
+            }
+            if (currentId != null && currentId > 0L) {
+                PayloadProcessor.lookupCaption(currentId)?.let { raw ->
+                    stripHtml(raw).trim().ifEmpty { null }?.let { return it }
+                }
+            }
+            null
         } catch (t: Throwable) {
             ModuleLog.w(displayName, "read caption failed", t)
             null
+        }
+    }
+
+    private fun idOf(entity: Any): Long? {
+        val method = ReflectUtil.findMethod(entity.javaClass, "getId") ?: return null
+        return ReflectUtil.invoke(entity, method) as? Long
+    }
+
+    /** 读取简介控件上已渲染的文本（含简介修复恢复后的内容）。 */
+    private fun captionTextFromView(view: View): String? {
+        return try {
+            val textId = view.resources.getIdentifier(
+                "caption_text_view",
+                "id",
+                view.context.packageName
+            )
+            if (textId != 0) {
+                view.findViewById<TextView>(textId)?.text?.toString()?.let { text ->
+                    if (text.isNotBlank()) return text
+                }
+            }
+            val holder = ReflectUtil.readField(view, "e") ?: return null
+            val textView = ReflectUtil.readField(holder, "e") as? TextView ?: return null
+            textView.text?.toString()?.takeIf { it.isNotBlank() }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun findCaptionViews(root: View?): List<View> {
+        val result = ArrayList<View>()
+        collectCaptionViews(root, result)
+        return result
+    }
+
+    private fun collectCaptionViews(root: View?, out: MutableList<View>) {
+        if (root == null) return
+        if (root.javaClass.name == CAPTION_VIEW_CLASS) {
+            out.add(root)
+            return
+        }
+        if (root is ViewGroup) {
+            for (index in 0 until root.childCount) {
+                collectCaptionViews(root.getChildAt(index), out)
+            }
         }
     }
 
@@ -228,17 +289,6 @@ class TranslationFeature : ConfigurableFeature(
         } catch (_: Throwable) {
             raw
         }
-    }
-
-    private fun findCaptionView(root: View?): View? {
-        if (root == null) return null
-        if (root.javaClass.name == CAPTION_VIEW_CLASS) return root
-        if (root is ViewGroup) {
-            for (index in 0 until root.childCount) {
-                findCaptionView(root.getChildAt(index))?.let { return it }
-            }
-        }
-        return null
     }
 
     private class CaptionDialogHolder(
