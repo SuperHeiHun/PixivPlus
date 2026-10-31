@@ -329,13 +329,17 @@ class TranslationFeature : ConfigurableFeature(
         return CaptionDialogHolder(dialog, scroll, body)
     }
 
-    /** 弹窗高度跟随内容，超过 420dp 后在弹窗内滚动，避免大片空白。 */
+    /** 弹窗高度跟随内容（含译文），超过 420dp 后在弹窗内滚动，避免大片空白。 */
     private fun fitCaptionDialog(activity: Activity, holder: CaptionDialogHolder) {
         holder.body.post {
             try {
-                holder.body.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-                val desired = holder.body.measuredHeight +
-                    holder.body.paddingTop + holder.body.paddingBottom
+                // 必须按最终布局宽度（屏宽 - 水平内边距）测量，否则长译文不换行导致高度被低估。
+                val contentWidth = activity.resources.displayMetrics.widthPixels -
+                    holder.body.paddingLeft - holder.body.paddingRight
+                val widthSpec = View.MeasureSpec.makeMeasureSpec(contentWidth, View.MeasureSpec.AT_MOST)
+                val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                holder.body.measure(widthSpec, heightSpec)
+                val desired = holder.body.measuredHeight
                 val maxHeight = UiKit.dp(activity, 420)
                 val params = holder.scroll.layoutParams as? LinearLayout.LayoutParams ?: return@post
                 params.height = minOf(desired, maxHeight)
