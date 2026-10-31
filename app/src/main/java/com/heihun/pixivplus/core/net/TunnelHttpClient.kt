@@ -77,7 +77,7 @@ internal object TunnelHttpClient {
                     url = current,
                     headers = headers,
                     body = body,
-                    maxBodyChars = maxBodyChars,
+                    maxBytes = maxBodyChars,
                     connectTimeoutMs = connectTimeoutMs,
                     readTimeoutMs = readTimeoutMs
                 )
@@ -99,12 +99,62 @@ internal object TunnelHttpClient {
                 current = try {
                     URL(current, location)
                 } catch (_: Throwable) {
-                    return ProxyResponse(response.code, response.body)
+                    return ProxyResponse(response.code, String(response.bytes, Charsets.UTF_8))
                 }
                 redirects++
                 continue
             }
-            return ProxyResponse(response.code, response.body)
+            return ProxyResponse(response.code, String(response.bytes, Charsets.UTF_8))
+        }
+    }
+
+    /** 字节版本：GET 重定向跟随，返回原始响应体（图片下载用）。 */
+    fun requestBytes(
+        spec: ProxySpec,
+        url: URL,
+        headers: Map<String, String>,
+        maxBytes: Int,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+        onError: ((Throwable) -> Unit)? = null
+    ): ProxyBytesResponse? {
+        var current = url
+        var redirects = 0
+        while (true) {
+            val response = try {
+                requestOnce(
+                    spec = spec,
+                    method = "GET",
+                    url = current,
+                    headers = headers,
+                    body = null,
+                    maxBytes = maxBytes,
+                    connectTimeoutMs = connectTimeoutMs,
+                    readTimeoutMs = readTimeoutMs
+                )
+            } catch (t: Throwable) {
+                ModuleLog.w(
+                    TAG,
+                    "request failed (${ProxySettings.describe(spec)}): " +
+                        "${t.javaClass.simpleName}: ${t.message}"
+                )
+                onError?.invoke(t)
+                return null
+            }
+            val location = response.location
+            if (response.code in 300..399 &&
+                !location.isNullOrBlank() &&
+                redirects < MAX_REDIRECTS
+            ) {
+                current = try {
+                    URL(current, location)
+                } catch (_: Throwable) {
+                    return ProxyBytesResponse(response.code, response.bytes)
+                }
+                redirects++
+                continue
+            }
+            return ProxyBytesResponse(response.code, response.bytes)
         }
     }
 
@@ -114,7 +164,7 @@ internal object TunnelHttpClient {
         url: URL,
         headers: Map<String, String>,
         body: ByteArray?,
-        maxBodyChars: Int,
+        maxBytes: Int,
         connectTimeoutMs: Int,
         readTimeoutMs: Int
     ): RawResponse {
@@ -147,7 +197,7 @@ internal object TunnelHttpClient {
             }
             output.flush()
             val input = BufferedInputStream(stream.getInputStream())
-            return readResponse(input, maxBodyChars)
+            return readResponse(input, maxBytes)
         } finally {
             try {
                 raw.close()
@@ -404,7 +454,7 @@ internal object TunnelHttpClient {
         }
     }
 
-    private fun readResponse(input: BufferedInputStream, maxBodyChars: Int): RawResponse {
+    private fun readResponse(input: BufferedInputStream, maxBytes: Int): RawResponse {
         val statusLine = readLine(input) ?: throw IOException("空响应")
         val code = statusLine.split(' ').getOrNull(1)?.toIntOrNull()
             ?: throw IOException("无效状态行: $statusLine")
@@ -418,24 +468,24 @@ internal object TunnelHttpClient {
             val value = line.substring(index + 1).trim()
             headers[name] = if (headers.containsKey(name)) headers[name] + ", " + value else value
         }
-        val maxBytes = maxBodyChars.coerceAtLeast(1024)
+        val maxRead = maxBytes.coerceAtLeast(1024)
         val bodyBytes = when {
             headers["transfer-encoding"]?.contains("chunked", true) == true -> {
-                readChunked(input, maxBytes)
+                readChunked(input, maxRead)
             }
             else -> {
                 val length = headers["content-length"]?.toLongOrNull()
                 if (length != null && length >= 0) {
-                    readLimited(input, minOf(length, maxBytes.toLong()).toInt())
+                    readLimited(input, minOf(length, maxRead.toLong()).toInt())
                 } else {
-                    readLimited(input, maxBytes)
+                    readLimited(input, maxRead)
                 }
             }
         }
-        val decoded = decode(bodyBytes, headers["content-encoding"], maxBytes)
+        val decoded = decode(bodyBytes, headers["content-encoding"], maxRead)
         return RawResponse(
             code = code,
-            body = String(decoded, Charsets.UTF_8),
+            bytes = decoded,
             location = headers["location"]
         )
     }
@@ -524,7 +574,7 @@ internal object TunnelHttpClient {
 
     private data class RawResponse(
         val code: Int,
-        val body: String,
+        val bytes: ByteArray,
         val location: String?
     )
 }

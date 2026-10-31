@@ -28,6 +28,7 @@ import com.heihun.pixivplus.core.net.FilterRules
 import com.heihun.pixivplus.core.net.ProxyMode
 import com.heihun.pixivplus.core.net.ProxySettings
 import com.heihun.pixivplus.core.net.ProxySpec
+import com.heihun.pixivplus.ui.ActivityResultBridge
 import com.heihun.pixivplus.ui.UiKit
 import com.heihun.pixivplus.ui.theme.Md3
 
@@ -39,6 +40,7 @@ object SettingsPanelBuilder {
         MAIN("PixivPlus", "本地增强设置"),
         FEATURES("功能开关", "浏览历史、过滤、Premium、广告与简介修复"),
         FILTERS("过滤规则", "关键词、标签与作者"),
+        NOVEL_SAVE("小说保存", "PDF / TXT 导出与保存位置"),
         PROXY("网络代理", "模块网页请求使用的代理"),
         BACKUP("数据备份", "本地文件夹与 WebDAV"),
         HISTORY("浏览历史", "记录策略与历史列表"),
@@ -140,6 +142,7 @@ object SettingsPanelBuilder {
                 body.addView(card)
                 renderFilterCard(activity, card)
             }
+            Screen.NOVEL_SAVE -> buildNovelSavePage(activity, body)
             Screen.PROXY -> {
                 val card = UiKit.card(activity)
                 body.addView(card)
@@ -180,6 +183,7 @@ object SettingsPanelBuilder {
         )
         addMenuRow(features, activity, "过滤规则", filterOverview(), Screen.FILTERS, open)
         addMenuRow(features, activity, "浏览历史", historySummary(), Screen.HISTORY, open)
+        addMenuRow(features, activity, "小说保存", novelSaveSummary(), Screen.NOVEL_SAVE, open)
         body.addView(features)
 
         body.addView(UiKit.sectionTitle(activity, "网络与数据"))
@@ -247,6 +251,12 @@ object SettingsPanelBuilder {
             "恢复因包含链接而被 Android 客户端隐藏的完整简介",
             configValue(ConfigKeys.CAPTION_FIX)
         ) { checked -> putConfig(ConfigKeys.CAPTION_FIX, checked) })
+        addRow(card, UiKit.switchRow(
+            activity,
+            "小说保存",
+            "在小说阅读页菜单中提供保存为 PDF / TXT",
+            configValue(ConfigKeys.NOVEL_SAVE_ENABLED)
+        ) { checked -> putConfig(ConfigKeys.NOVEL_SAVE_ENABLED, checked) })
         body.addView(card)
         body.addView(
             UiKit.paragraph(
@@ -254,6 +264,55 @@ object SettingsPanelBuilder {
                 "这些开关只影响本地模块行为；本地 Premium 覆盖不会解锁服务端限制功能。"
             )
         )
+    }
+
+    private fun buildNovelSavePage(activity: Activity, body: LinearLayout) {
+        val card = UiKit.card(activity)
+        val folderRow = UiKit.infoRow(activity, "保存位置", novelSaveFolderLabel(activity))
+        card.addView(folderRow)
+        card.addView(UiKit.filledButtonRow(activity, "选择保存文件夹") {
+            ActivityResultBridge.pickFolder(activity) { resultActivity, uri ->
+                if (uri == null) {
+                    Toast.makeText(resultActivity, "未选择文件夹", Toast.LENGTH_SHORT).show()
+                } else {
+                    putConfig(ConfigKeys.NOVEL_SAVE_FOLDER_URI, uri.toString())
+                    ModuleLog.i(TAG, "novel save folder selected: $uri")
+                    Toast.makeText(resultActivity, "已选择保存位置", Toast.LENGTH_SHORT).show()
+                    (folderRow.getChildAt(1) as? TextView)?.text = novelSaveFolderLabel(resultActivity)
+                }
+            }
+        })
+        card.addView(UiKit.divider(activity, 16, 16))
+        card.addView(UiKit.paragraph(
+            activity,
+            "在小说阅读页右上角菜单中点「保存为 PDF」或「保存为 TXT」。" +
+                "PDF 兼容带插图的作品（随作品上传的图片和引用的插画都会嵌入），" +
+                "TXT 只保留纯文本（插图位置以 [插图 N] 占位）。"
+        ))
+        card.addView(UiKit.divider(activity, 16, 16))
+        card.addView(UiKit.paragraph(
+            activity,
+            "首次保存时必须先选择保存位置；文件名格式为「小说_标题_作品ID.pdf / .txt」。" +
+                "保存位置只保留在本机，不写入备份。正文通过网页版接口获取，网络请求沿用代理设置。"
+        ))
+        body.addView(card)
+    }
+
+    private fun novelSaveFolderLabel(activity: Activity): String {
+        val raw = configText(ConfigKeys.NOVEL_SAVE_FOLDER_URI)
+        if (raw.isBlank()) return "未选择（首次保存时提示选择）"
+        return try {
+            com.heihun.pixivplus.core.backup.BackupManager.folderName(activity, android.net.Uri.parse(raw))
+                ?: "无法读取（授权可能失效）"
+        } catch (_: Throwable) {
+            "无法读取（授权可能失效）"
+        }
+    }
+
+    private fun novelSaveSummary(): String {
+        val enabled = configValue(ConfigKeys.NOVEL_SAVE_ENABLED)
+        val folder = if (configText(ConfigKeys.NOVEL_SAVE_FOLDER_URI).isBlank()) "未选位置" else "已选位置"
+        return if (enabled) "$folder · PDF / TXT" else "已关闭"
     }
 
     private fun buildHistoryPage(activity: Activity, body: LinearLayout) {

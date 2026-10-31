@@ -8,6 +8,8 @@ import java.net.URL
 
 data class ProxyResponse(val code: Int, val body: String)
 
+class ProxyBytesResponse(val code: Int, val bytes: ByteArray)
+
 /**
  * 模块自身的 HTTP 请求入口。
  *
@@ -89,6 +91,46 @@ object ProxyHttp {
 
     /** 当前线程最近一次请求失败的原因，用于设置页提示；不包含代理密码。 */
     fun lastFailureReason(): String? = lastFailure.get()
+
+    /** 二进制 GET：图片下载用；非 2xx 或失败返回 null。 */
+    fun getBytes(
+        store: ConfigStore,
+        url: URL,
+        headers: Map<String, String> = emptyMap(),
+        maxBytes: Int = 24 * 1024 * 1024,
+        connectTimeoutMs: Int = 8000,
+        readTimeoutMs: Int = 20000
+    ): ProxyBytesResponse? {
+        lastFailure.remove()
+        val spec = effectiveSpec(store)
+        val allHeaders = defaultHeaders(headers)
+        return try {
+            if (spec.mode.requiresEndpoint() && !spec.hasValidEndpoint()) {
+                ModuleLog.w(TAG, "invalid proxy config (${spec.display()})")
+                lastFailure.set("代理地址或端口无效")
+                null
+            } else {
+                TunnelHttpClient.requestBytes(
+                    spec = spec,
+                    url = url,
+                    headers = allHeaders,
+                    maxBytes = maxBytes,
+                    connectTimeoutMs = connectTimeoutMs,
+                    readTimeoutMs = readTimeoutMs,
+                    onError = { error ->
+                        lastFailure.set(error.message ?: error.javaClass.simpleName)
+                    }
+                )
+            }
+        } catch (t: Throwable) {
+            ModuleLog.w(
+                TAG,
+                "request failed (${ProxySettings.describe(spec)}): ${t.javaClass.simpleName}: ${t.message}"
+            )
+            lastFailure.set(t.message ?: t.javaClass.simpleName)
+            null
+        }
+    }
 
     /**
      * 将「跟随系统」解析为具体的直连 / HTTP / SOCKS5 配置。
