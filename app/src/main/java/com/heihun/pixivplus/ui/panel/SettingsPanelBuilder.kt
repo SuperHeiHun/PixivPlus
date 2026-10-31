@@ -544,7 +544,7 @@ object SettingsPanelBuilder {
                 card,
                 "作者",
                 ConfigKeys.FILTER_AUTHORS,
-                "例如：画师名, account"
+                "例如：12345678（UID）, 画师名, account"
             )
         )
         addRow(

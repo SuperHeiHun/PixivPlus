@@ -35,10 +35,22 @@ class FilterRules(
             }
             if (authors.isNotEmpty()) {
                 val user = item.optJSONObject("user")
+                // 纯数字规则按作者 UID 精确匹配，避免误伤昵称里的数字。
+                val uid = user?.optLong("id", 0L)?.takeIf { it > 0L }
+                    ?: item.optLong("user_id", 0L).takeIf { it > 0L }
+                    ?: 0L
+                val uidText = if (uid > 0L) uid.toString() else ""
                 val name = user?.optString("name").orEmpty()
                 val account = user?.optString("account").orEmpty()
                 val flatName = item.optString("user_name")
-                if (authors.any { contains(name, it) || contains(account, it) || contains(flatName, it) }) {
+                if (authors.any { rule ->
+                        if (rule.all { it.isDigit() }) {
+                            uidText.isNotEmpty() && uidText == rule
+                        } else {
+                            contains(name, rule) || contains(account, rule) || contains(flatName, rule)
+                        }
+                    }
+                ) {
                     return true
                 }
             }

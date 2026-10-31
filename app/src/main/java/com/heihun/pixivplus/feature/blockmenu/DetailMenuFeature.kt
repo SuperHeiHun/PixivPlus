@@ -121,6 +121,7 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
                 id = id,
                 type = EntityReader.type(entity, defaultType),
                 title = EntityReader.title(entity) ?: work?.title,
+                authorId = EntityReader.authorId(entity) ?: work?.authorId,
                 authorName = EntityReader.authorName(entity) ?: work?.authorName,
                 authorAccount = EntityReader.authorAccount(entity),
                 tags = entityTags.ifEmpty { work?.tags.orEmpty() }
@@ -452,6 +453,18 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
     private fun blockAuthor() {
         val activity = currentActivity ?: return
         val snapshot = resolveSnapshot()
+        val authorId = snapshot?.authorId?.takeIf { it > 0L }
+        if (authorId != null) {
+            val current = ConfigStoreRegistry.store.get(ConfigKeys.FILTER_AUTHORS)
+            ConfigStoreRegistry.store.put(
+                ConfigKeys.FILTER_AUTHORS,
+                RuleAppender.append(current, listOf(authorId.toString()))
+            )
+            toast(activity, "已屏蔽作者 UID：$authorId")
+            ModuleLog.i(displayName, "block-by-author appended uid=$authorId")
+            return
+        }
+        // 实体缺失时退回名称 / 账号（旧规则仍按名称匹配）。
         val author = snapshot?.authorName?.takeIf { it.isNotEmpty() }
             ?: snapshot?.authorAccount?.takeIf { it.isNotEmpty() }
         if (author.isNullOrEmpty()) {

@@ -177,6 +177,7 @@ class HistoryFeature : ConfigurableFeature("history", "本地浏览历史", Conf
                 id = id,
                 type = type,
                 title = title,
+                authorId = authorId,
                 authorName = authorName,
                 authorAccount = EntityReader.authorAccount(entity),
                 tags = tagList
