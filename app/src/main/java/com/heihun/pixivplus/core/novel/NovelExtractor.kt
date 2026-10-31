@@ -16,11 +16,12 @@ object NovelExtractor {
      * 从阅读页 DOM 提取小说正文 token：
      * `x` 文本节点、`i` 图片、`n` 块级换行（<br> 与块元素边界）。
      *
-     * 页面里除正文外还有标题区 / 收藏按钮 / 系列链接 / 作者说明等，先用
-     * 「可见高度 + 段落数 + 层级深度」评分定位正文容器（评分最高者通常是
-     * 占满阅读区的正文块），只遍历该容器；并把选中的容器存到
-     * `window.__plpTarget`，供译文替换 / 还原使用。遍历时跳过隐藏元素、
-     * 注音节点、按钮与短链接文本。
+     * 阅读页结构（实测 /webview/v2/novel 服务端渲染）：
+     * `<body id="content">` 下有封面 / 标题 / 收藏 / 简介等，正文固定在
+     * `<div id="text">` 中，分页为 `<div id="N" class="page">`，每行是
+     * `<span id="lineN">` + `<br>`。优先取 `#text`，缺失时退回「高度 + 段落 +
+     * 深度」评分定位；选中的容器存到 `window.__plpTarget`，供译文替换 /
+     * 还原使用。遍历时跳过隐藏元素、注音节点、按钮与短链接文本。
      */
     const val EXTRACT_SCRIPT = """
 (function(){
@@ -29,6 +30,10 @@ object NovelExtractor {
     try{return el.getClientRects().length>0;}catch(e){return true;}
   }
   function pickRoot(){
+    try{
+      var t=document.getElementById('text');
+      if(t)return t;
+    }catch(e){}
     var body=document.body;
     var bodyLen=(body.textContent||'').length||1;
     var best=null,bestScore=-1;
