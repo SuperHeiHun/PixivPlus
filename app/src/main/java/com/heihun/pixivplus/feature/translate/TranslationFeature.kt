@@ -17,6 +17,7 @@ import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.novel.NovelExtractor
 import com.heihun.pixivplus.core.translate.Translator
 import com.heihun.pixivplus.core.util.EntityReader
+import com.heihun.pixivplus.core.util.DetailPagerResolver
 import com.heihun.pixivplus.core.util.MenuHooks
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
@@ -179,19 +180,19 @@ class TranslationFeature : ConfigurableFeature(
             toast(activity, "未获取到当前简介")
             return
         }
-        val dialog = captionDialog(activity, "正在翻译…")
+        val holder = captionDialog(activity, "正在翻译…")
         executor.execute {
             val store = ConfigStoreRegistry.store
             val result = Translator.translate(store, caption)
             runOnUi(activity) {
                 try {
-                    val body = dialog.findViewById<TextView>(android.R.id.text1)
-                    body?.text = if (result.text != null) {
+                    holder.body.text = if (result.text != null) {
                         "【原文】\n$caption\n\n【译文】\n${result.text}"
                     } else {
                         "翻译失败：${result.error ?: "未知错误"}"
                     }
-                    body?.setTextIsSelectable(true)
+                    holder.body.setTextIsSelectable(true)
+                    fitCaptionDialog(activity, holder)
                 } catch (t: Throwable) {
                     ModuleLog.w(displayName, "update caption dialog failed", t)
                 }
@@ -199,9 +200,18 @@ class TranslationFeature : ConfigurableFeature(
         }
     }
 
-    /** 读取当前详情页简介（去除 HTML 标记），失败返回 null。 */
+    /**
+     * 读取当前详情页简介（去除 HTML 标记），失败返回 null。
+     * 翻页详情优先取 ViewPager 当前页的作品，避免滑动后读到相邻页 / 复用页的简介。
+     */
     private fun currentCaption(activity: Activity): String? {
         return try {
+            val pagerEntity = DetailPagerResolver.currentItem(activity)
+            if (pagerEntity != null) {
+                EntityReader.caption(pagerEntity)?.let { raw ->
+                    stripHtml(raw).trim().ifEmpty { null }?.let { return it }
+                }
+            }
             val view = findCaptionView(activity.window?.decorView) ?: return null
             val entity = ReflectUtil.readField(view, "f") ?: return null
             val raw = EntityReader.caption(entity) ?: return null
@@ -231,15 +241,19 @@ class TranslationFeature : ConfigurableFeature(
         return null
     }
 
-    /** 简介翻译弹窗：占位 TextView 的 id 固定为 android.R.id.text1，便于后续更新。 */
-    private fun captionDialog(activity: Activity, initial: String): Dialog {
+    private class CaptionDialogHolder(
+        val dialog: Dialog,
+        val scroll: ScrollView,
+        val body: TextView
+    )
+
+    /** 简介翻译弹窗：占位 TextView 持有在 holder 中；内容更新后调用 [fitCaptionDialog] 收纳高度。 */
+    private fun captionDialog(activity: Activity, initial: String): CaptionDialogHolder {
         val dialog = UiKit.dialog(activity)
         val surface = UiKit.dialogSurface(activity)
         surface.addView(UiKit.dialogHeader(activity, "简介翻译", null) { dialog.dismiss() })
         surface.addView(UiKit.divider(activity))
-        val scroll = ScrollView(activity).apply {
-            isFillViewport = true
-        }
+        val scroll = ScrollView(activity)
         val body = TextView(activity).apply {
             id = android.R.id.text1
             text = initial
@@ -253,12 +267,32 @@ class TranslationFeature : ConfigurableFeature(
             scroll,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                UiKit.dp(activity, 380)
+                ViewGroup.LayoutParams.WRAP_CONTENT
             )
         )
         dialog.setContentView(surface)
+        dialog.window?.apply {
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setGravity(android.view.Gravity.CENTER)
+        }
         dialog.show()
-        return dialog
+        return CaptionDialogHolder(dialog, scroll, body)
+    }
+
+    /** 弹窗高度跟随内容，超过 420dp 后在弹窗内滚动，避免大片空白。 */
+    private fun fitCaptionDialog(activity: Activity, holder: CaptionDialogHolder) {
+        holder.body.post {
+            try {
+                holder.body.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+                val desired = holder.body.measuredHeight +
+                    holder.body.paddingTop + holder.body.paddingBottom
+                val maxHeight = UiKit.dp(activity, 420)
+                val params = holder.scroll.layoutParams as? LinearLayout.LayoutParams ?: return@post
+                params.height = minOf(desired, maxHeight)
+                holder.scroll.requestLayout()
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     // ------------------------------------------------------------------

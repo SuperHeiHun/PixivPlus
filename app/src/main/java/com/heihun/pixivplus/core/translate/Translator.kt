@@ -5,6 +5,7 @@ import com.heihun.pixivplus.core.config.ConfigStore
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.net.ProxyHttp
 import org.json.JSONArray
+import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
@@ -22,6 +23,9 @@ object Translator {
         "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&dt=t"
     private const val MAX_CHUNK_CHARS = 3500
     private const val MAX_CACHE_ENTRIES = 400
+    private const val MODULE_UA =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
     data class Target(val code: String, val label: String)
 
@@ -42,6 +46,11 @@ object Translator {
         return TARGETS.firstOrNull { it.code == configured } ?: TARGETS[0]
     }
 
+    /** 最近一次翻译失败的详细原因（模块栈 + 宿主栈），供 UI 展示。 */
+    @Volatile
+    var lastError: String? = null
+        private set
+
     fun translate(
         store: ConfigStore,
         text: String,
@@ -59,7 +68,7 @@ object Translator {
             onProgress?.invoke(index, chunks.size)
             val translated = requestChunk(store, target.code, chunk)
             if (translated == null) {
-                return Result(null, ProxyHttp.lastFailureReason() ?: "翻译请求失败")
+                return Result(null, lastError ?: "翻译请求失败")
             }
             if (builder.isNotEmpty()) builder.append('\n')
             builder.append(translated)
@@ -72,8 +81,11 @@ object Translator {
 
     private fun requestChunk(store: ConfigStore, target: String, chunk: String): String? {
         val body = "q=" + URLEncoder.encode(chunk, "UTF-8")
-        val response = try {
-            ProxyHttp.request(
+        val errors = ArrayList<String>()
+
+        // 1) 模块网络栈（含 SOCKS 认证等自建能力）。
+        try {
+            val response = ProxyHttp.request(
                 store = store,
                 url = URL("$ENDPOINT&tl=$target"),
                 method = "POST",
@@ -83,19 +95,66 @@ object Translator {
                 connectTimeoutMs = 8000,
                 readTimeoutMs = 20000
             )
+            if (response != null && response.code == 200) {
+                parseResponse(response.body)?.let { return it }
+                errors += "模块栈响应解析失败"
+                ModuleLog.w(TAG, "module translate parse failed")
+            } else {
+                val reason = response?.let { "HTTP ${it.code}" }
+                    ?: (ProxyHttp.lastFailureReason() ?: "请求失败")
+                errors += "模块栈：$reason"
+                ModuleLog.w(TAG, "module translate failed: $reason")
+            }
         } catch (t: Throwable) {
-            ModuleLog.w(TAG, "request failed: ${t.javaClass.simpleName}: ${t.message}")
-            return null
-        } ?: return null
-        if (response.code != 200) {
-            ModuleLog.w(TAG, "translate http ${response.code}")
-            return null
+            errors += "模块栈：${t.message ?: t.javaClass.simpleName}"
+            ModuleLog.w(TAG, "module translate exception: ${t.javaClass.simpleName}: ${t.message}")
         }
-        val parsed = parseResponse(response.body)
-        if (parsed == null) {
-            ModuleLog.w(TAG, "translate response parse failed")
+
+        // 2) 宿主网络栈（自动使用系统代理 / App 代理选择器）。
+        requestChunkHost(target, body)?.let { return it }
+
+        lastError = (errors + "宿主栈失败").joinToString("；") +
+            "。请在「网络代理」配置可用代理，或开启「让 Pixiv App 也走此代理」后重试"
+        return null
+    }
+
+    private fun requestChunkHost(target: String, formBody: String): String? {
+        var connection: HttpURLConnection? = null
+        return try {
+            connection = URL("$ENDPOINT&tl=$target").openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 8000
+            connection.readTimeout = 20000
+            connection.doOutput = true
+            connection.setRequestProperty(
+                "Content-Type",
+                "application/x-www-form-urlencoded; charset=UTF-8"
+            )
+            connection.setRequestProperty("User-Agent", MODULE_UA)
+            connection.outputStream.use { output ->
+                output.write(formBody.toByteArray(Charsets.UTF_8))
+                output.flush()
+            }
+            if (connection.responseCode !in 200..299) {
+                ModuleLog.w(TAG, "host translate http ${connection.responseCode}")
+                return null
+            }
+            val text = connection.inputStream.use { input ->
+                input.readBytes().toString(Charsets.UTF_8)
+            }
+            parseResponse(text) ?: run {
+                ModuleLog.w(TAG, "host translate parse failed")
+                null
+            }
+        } catch (t: Throwable) {
+            ModuleLog.w(TAG, "host translate failed: ${t.javaClass.simpleName}: ${t.message}")
+            null
+        } finally {
+            try {
+                connection?.disconnect()
+            } catch (_: Throwable) {
+            }
         }
-        return parsed
     }
 
     /** 解析 `[[[译文, 原文, ...], ...], ...]` 结构，拼接全部片段。 */
