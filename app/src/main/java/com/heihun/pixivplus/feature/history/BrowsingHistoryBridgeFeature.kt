@@ -4,6 +4,7 @@ import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.Runtime
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.log.ModuleLog
+import com.heihun.pixivplus.core.net.HistoryPaging
 import com.heihun.pixivplus.core.net.HistoryPayloadBuilder
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
@@ -28,7 +29,6 @@ class BrowsingHistoryBridgeFeature : ConfigurableFeature(
         const val RESPONSE_BODY = "okhttp3.ResponseBody"
         const val PATH_ILLUSTS = "/browsing-history/illusts"
         const val PATH_NOVELS = "/browsing-history/novels"
-        const val INJECT_LIMIT = 50
     }
 
     override fun hook(host: Host) {
@@ -65,43 +65,75 @@ class BrowsingHistoryBridgeFeature : ConfigurableFeature(
 
     private fun inject(host: Host, param: XC_MethodHook.MethodHookParam, response: Any) {
         if (!bridgeEnabled()) return
-        val path = requestPath(param.args?.firstOrNull()) ?: return
+        val url = requestUrl(param.args?.firstOrNull()) ?: return
         val listKey: String
         val types: List<String>
         when {
-            path.contains(PATH_ILLUSTS) -> {
+            url.contains(PATH_ILLUSTS) -> {
                 listKey = HistoryPayloadBuilder.KEY_ILLUSTS
                 types = listOf("ILLUST", "MANGA")
             }
-            path.contains(PATH_NOVELS) -> {
+            url.contains(PATH_NOVELS) -> {
                 listKey = HistoryPayloadBuilder.KEY_NOVELS
                 types = listOf("NOVEL")
             }
             else -> return
         }
-        val rows = Runtime.historyDaoOrNull()?.queryTypes(types, INJECT_LIMIT).orEmpty()
+        val dao = Runtime.historyDaoOrNull() ?: return
+        val offset = HistoryPaging.localOffsetOf(url)
+        val limit = HistoryPaging.limitOf(url)
+        val rows = dao.queryTypes(types, limit, offset)
+        // 本地这一页没有记录时不要消费响应体，原样交还宿主。
         if (rows.isEmpty()) return
+        val total = dao.countTypes(types)
         val body = ReflectUtil.invoke(response, ReflectUtil.findMethod(response.javaClass, "body")) ?: return
         val text = ReflectUtil.invoke(body, ReflectUtil.findMethod(body.javaClass, "string")) as? String ?: return
+        val serverNext = serverNextUrl(text)
+        val nextUrl = if (offset + limit < total) {
+            // 以服务端 next_url 为基底，保留其游标 / offset，只附加本地分页参数。
+            HistoryPaging.withLocalOffset(serverNext ?: url, offset + limit)
+        } else {
+            null
+        }
         val profiles = Runtime.authorProfileDaoOrNull()
             ?.query(rows.mapNotNull { it.authorId })
             .orEmpty()
-        val content = HistoryPayloadBuilder.mergeLocalHistory(text, listKey, rows, profiles) ?: text
+        val content = HistoryPayloadBuilder.mergeLocalHistory(
+            text,
+            listKey,
+            rows,
+            profiles,
+            nextUrl
+        ) ?: text
         val rebuilt = rebuildResponse(host, response, body, content) ?: return
         param.result = rebuilt
         if (content != text) {
             ModuleLog.i(
                 displayName,
-                "injected local history into $listKey (rows=${rows.size}, avatars=${profiles.count { it.value.avatarUrl != null }})"
+                "injected local history into $listKey " +
+                    "(offset=$offset, limit=$limit, rows=${rows.size}, total=$total, " +
+                    "next=$nextUrl, avatars=${profiles.count { it.value.avatarUrl != null }})"
             )
         }
     }
 
-    private fun requestPath(chain: Any?): String? {
+    private fun requestUrl(chain: Any?): String? {
         if (chain == null) return null
         val request = ReflectUtil.invoke(chain, ReflectUtil.findMethod(chain.javaClass, "request")) ?: return null
         val url = ReflectUtil.invoke(request, ReflectUtil.findMethod(request.javaClass, "url")) ?: return null
-        return ReflectUtil.invoke(url, ReflectUtil.findMethod(url.javaClass, "encodedPath")) as? String
+        val text = url.toString()
+        return text.takeIf { it.isNotBlank() }
+    }
+
+    /** 服务端响应里的 next_url；为空或非字符串时返回 null。 */
+    private fun serverNextUrl(text: String): String? {
+        return try {
+            org.json.JSONObject(text)
+                .optString("next_url")
+                .takeIf { it.isNotBlank() && it != "null" }
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private fun rebuildResponse(host: Host, response: Any, body: Any, content: String): Any? {

@@ -162,6 +162,51 @@ class HistoryPayloadBuilderTest {
     }
 
     @Test
+    fun overridesNextUrlWithLocalPage() {
+        val server = JSONObject()
+            .put("illusts", org.json.JSONArray().put(JSONObject().put("id", 1)))
+            .put("next_url", "https://server/next")
+            .toString()
+        val merged = HistoryPayloadBuilder.mergeLocalHistory(
+            server,
+            "illusts",
+            listOf(row(id = 2L)),
+            nextUrl = "https://local/next?plp_offset=30"
+        )
+        assertNotNull(merged)
+        assertEquals("https://local/next?plp_offset=30", JSONObject(merged!!).getString("next_url"))
+    }
+
+    @Test
+    fun writesNextUrlEvenWhenAllRowsAlreadyOnServer() {
+        val server = JSONObject()
+            .put("illusts", org.json.JSONArray().put(JSONObject().put("id", 2)))
+            .put("next_url", JSONObject.NULL)
+            .toString()
+        val merged = HistoryPayloadBuilder.mergeLocalHistory(
+            server,
+            "illusts",
+            listOf(row(id = 2L)),
+            nextUrl = "https://local/next?plp_offset=30"
+        )
+        assertNotNull(merged)
+        val root = JSONObject(merged!!)
+        assertEquals(1, root.getJSONArray("illusts").length())
+        assertEquals("https://local/next?plp_offset=30", root.getString("next_url"))
+    }
+
+    @Test
+    fun keepsServerNextUrlWhenLocalPageHasNoMore() {
+        val server = JSONObject()
+            .put("illusts", org.json.JSONArray().put(JSONObject().put("id", 1)))
+            .put("next_url", "https://server/next")
+            .toString()
+        val merged = HistoryPayloadBuilder.mergeLocalHistory(server, "illusts", listOf(row(id = 2L)))
+        assertNotNull(merged)
+        assertEquals("https://server/next", JSONObject(merged!!).getString("next_url"))
+    }
+
+    @Test
     fun usesStoredDimensions() {
         val item = HistoryPayloadBuilder.buildIllustItem(row(width = 1200, height = 1600))
         assertNotNull(item)

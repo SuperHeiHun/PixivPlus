@@ -18,11 +18,17 @@ object HistoryPayloadBuilder {
     private const val DEFAULT_WIDTH = 1000
     private const val DEFAULT_HEIGHT = 1000
 
+    /**
+     * 把本地历史合并到服务端响应。
+     *
+     * @param nextUrl 本地记录还有下一页时指向下一批的地址；为 null 时保留服务端原有的 `next_url`。
+     */
     fun mergeLocalHistory(
         responseText: String,
         listKey: String,
         rows: List<HistoryDao.HistoryItem>,
-        profiles: Map<Long, AuthorProfileDao.Profile> = emptyMap()
+        profiles: Map<Long, AuthorProfileDao.Profile> = emptyMap(),
+        nextUrl: String? = null
     ): String? {
         if (rows.isEmpty()) return null
         val root = try {
@@ -55,8 +61,11 @@ object HistoryPayloadBuilder {
             val item = serverItems.optJSONObject(index) ?: continue
             merged.put(item)
         }
-        if (added == 0) return null
+        if (added == 0 && nextUrl == null) return null
         root.put(listKey, merged)
+        if (nextUrl != null) {
+            root.put("next_url", nextUrl)
+        }
         return root.toString()
     }
 

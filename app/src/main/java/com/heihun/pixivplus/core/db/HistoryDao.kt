@@ -78,14 +78,16 @@ class HistoryDao(private val database: LocalDatabase) {
         }
     }
 
-    fun queryTypes(types: List<String>, limit: Int): List<HistoryItem> {
+    fun queryTypes(types: List<String>, limit: Int, offset: Int = 0): List<HistoryItem> {
         val result = ArrayList<HistoryItem>()
         if (types.isEmpty()) return result
         return try {
             val placeholders = types.joinToString(",") { "?" }
-            val sql = "SELECT $columns FROM ${LocalDatabase.HISTORY_TABLE} WHERE type IN ($placeholders) ORDER BY visited_at DESC LIMIT ?"
+            val sql = "SELECT $columns FROM ${LocalDatabase.HISTORY_TABLE} WHERE type IN ($placeholders) " +
+                "ORDER BY visited_at DESC LIMIT ? OFFSET ?"
             val args = ArrayList<String>(types)
             args.add(limit.toString())
+            args.add(offset.coerceAtLeast(0).toString())
             database.writable().rawQuery(sql, args.toTypedArray()).use { cursor ->
                 while (cursor.moveToNext()) {
                     result.add(read(cursor))
@@ -95,6 +97,21 @@ class HistoryDao(private val database: LocalDatabase) {
         } catch (t: Throwable) {
             ModuleLog.e("HistoryDao", "queryTypes failed", t)
             result
+        }
+    }
+
+    /** 指定类型的历史总数，用于浏览记录翻页判断。 */
+    fun countTypes(types: List<String>): Int {
+        if (types.isEmpty()) return 0
+        return try {
+            val placeholders = types.joinToString(",") { "?" }
+            val sql = "SELECT COUNT(*) FROM ${LocalDatabase.HISTORY_TABLE} WHERE type IN ($placeholders)"
+            database.writable().rawQuery(sql, types.toTypedArray()).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getInt(0) else 0
+            }
+        } catch (t: Throwable) {
+            ModuleLog.e("HistoryDao", "countTypes failed", t)
+            0
         }
     }
 
