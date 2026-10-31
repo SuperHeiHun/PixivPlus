@@ -56,7 +56,7 @@ object TagSelectDialog {
             }
             texts.addView(summary)
             header.addView(texts)
-            header.addView(UiKit.closeButton(activity) { dialog.dismiss() })
+            header.addView(UiKit.closeButton(activity) { UiKit.dismissAnimated(dialog, root) })
             root.addView(header)
             root.addView(UiKit.divider(activity))
 
@@ -121,13 +121,12 @@ object TagSelectDialog {
                 setPadding(UiKit.dp(activity, 16), UiKit.dp(activity, 8), UiKit.dp(activity, 16), UiKit.dp(activity, 12))
             }
             val cancel = UiKit.textButton(activity, "取消").apply {
-                setOnClickListener { dialog.dismiss() }
+                setOnClickListener { UiKit.dismissAnimated(dialog, root) }
             }
             val confirm = UiKit.filledButton(activity, "保存").apply {
                 setOnClickListener {
                     val selected = tags.filterIndexed { index, _ -> checked[index] }
-                    dialog.dismiss()
-                    onConfirm(selected)
+                    UiKit.dismissAnimated(dialog, root) { onConfirm(selected) }
                 }
             }
             footer.addView(cancel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, UiKit.dp(activity, 40)))
@@ -139,6 +138,7 @@ object TagSelectDialog {
             dialog.setContentView(root)
             dialog.show()
             UiKit.applyDialogWidth(dialog, 0.92f, 520)
+            UiKit.animateDialogIn(root)
             ModuleLog.i(TAG, "tag dialog shown (${tags.size} tags)")
         } catch (t: Throwable) {
             ModuleLog.e(TAG, "show failed", t)

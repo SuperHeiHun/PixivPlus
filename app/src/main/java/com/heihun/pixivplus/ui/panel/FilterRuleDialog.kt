@@ -28,9 +28,8 @@ object FilterRuleDialog {
                 UiKit.dialogHeader(
                     activity,
                     title,
-                    "每行一条，也可用逗号 / 分号分隔",
-                    dialog::dismiss
-                )
+                    "每行一条，也可用逗号 / 分号分隔"
+                ) { UiKit.dismissAnimated(dialog, root) }
             )
             root.addView(UiKit.divider(activity))
 
@@ -73,13 +72,12 @@ object FilterRuleDialog {
                 )
             }
             val cancel = UiKit.textButton(activity, "取消").apply {
-                setOnClickListener { dialog.dismiss() }
+                setOnClickListener { UiKit.dismissAnimated(dialog, root) }
             }
             val save = UiKit.filledButton(activity, "保存").apply {
                 setOnClickListener {
                     val value = field.text.toString().trim()
-                    dialog.dismiss()
-                    onSave(value)
+                    UiKit.dismissAnimated(dialog, root) { onSave(value) }
                 }
             }
             footer.addView(
@@ -103,6 +101,7 @@ object FilterRuleDialog {
             dialog.setContentView(root)
             dialog.show()
             UiKit.applyDialogWidth(dialog, 0.92f, 520)
+            UiKit.animateDialogIn(root)
             dialog.window?.setSoftInputMode(
                 WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or
                     WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE

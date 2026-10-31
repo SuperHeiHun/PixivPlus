@@ -27,7 +27,7 @@ object ConfirmDialog {
             val palette = UiKit.colors(activity)
             val root = UiKit.dialogSurface(activity)
 
-            root.addView(UiKit.dialogHeader(activity, title, null) { dialog.dismiss() })
+            root.addView(UiKit.dialogHeader(activity, title, null) { UiKit.dismissAnimated(dialog, root) })
             root.addView(UiKit.divider(activity))
             root.addView(TextView(activity).apply {
                 text = message
@@ -55,7 +55,7 @@ object ConfirmDialog {
                 )
             }
             val cancel = UiKit.textButton(activity, "取消").apply {
-                setOnClickListener { dialog.dismiss() }
+                setOnClickListener { UiKit.dismissAnimated(dialog, root) }
             }
             val confirm = (if (danger) {
                 UiKit.dangerTextButton(activity, confirmLabel)
@@ -63,8 +63,7 @@ object ConfirmDialog {
                 UiKit.filledButton(activity, confirmLabel)
             }).apply {
                 setOnClickListener {
-                    dialog.dismiss()
-                    onConfirm()
+                    UiKit.dismissAnimated(dialog, root) { onConfirm() }
                 }
             }
             footer.addView(
@@ -88,6 +87,7 @@ object ConfirmDialog {
             dialog.setContentView(root)
             dialog.show()
             UiKit.applyDialogWidth(dialog, 0.9f, 460)
+            UiKit.animateDialogIn(root)
             ModuleLog.i(TAG, "confirm shown: $title")
         } catch (t: Throwable) {
             ModuleLog.e(TAG, "show failed", t)

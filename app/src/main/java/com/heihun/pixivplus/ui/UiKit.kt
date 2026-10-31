@@ -587,6 +587,48 @@ object UiKit {
         }
     }
 
+    /** 弹窗入场动画：表面从 0.9 缩放 + 淡入（MD3 风格，遮罩由窗口动画淡入）。 */
+    fun animateDialogIn(surface: View) {
+        try {
+            surface.alpha = 0f
+            surface.scaleX = 0.9f
+            surface.scaleY = 0.9f
+            surface.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(220L)
+                .setInterpolator(DecelerateInterpolator(1.8f))
+                .start()
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** 弹窗退场：淡出 + 轻微缩小，动画结束后真正 dismiss 并回调。 */
+    fun dismissAnimated(dialog: Dialog, surface: View, onDone: (() -> Unit)? = null) {
+        try {
+            surface.animate()
+                .alpha(0f)
+                .scaleX(0.94f)
+                .scaleY(0.94f)
+                .setDuration(150L)
+                .withEndAction {
+                    try {
+                        dialog.dismiss()
+                    } catch (_: Throwable) {
+                    }
+                    onDone?.invoke()
+                }
+                .start()
+        } catch (_: Throwable) {
+            try {
+                dialog.dismiss()
+            } catch (_: Throwable) {
+            }
+            onDone?.invoke()
+        }
+    }
+
     /** 28dp 圆角的 MD3 对话框/面板表面。 */
     fun dialogSurface(context: Context): LinearLayout {
         val palette = colors(context)

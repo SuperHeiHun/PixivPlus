@@ -54,7 +54,7 @@ object ChoiceDialog {
                 setPadding(0, UiKit.dp(activity, 2), 0, 0)
             })
             header.addView(texts)
-            header.addView(UiKit.closeButton(activity) { dialog.dismiss() })
+            header.addView(UiKit.closeButton(activity) { UiKit.dismissAnimated(dialog, root) })
             root.addView(header)
             root.addView(UiKit.divider(activity))
 
@@ -93,8 +93,8 @@ object ChoiceDialog {
                     layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 })
                 row.setOnClickListener {
-                    dialog.dismiss()
                     onSelect(index)
+                    UiKit.dismissAnimated(dialog, root)
                 }
                 list.addView(row)
             }
@@ -113,6 +113,7 @@ object ChoiceDialog {
             dialog.setContentView(root)
             dialog.show()
             UiKit.applyDialogWidth(dialog, 0.92f, 520)
+            UiKit.animateDialogIn(root)
         } catch (_: Throwable) {
         }
     }

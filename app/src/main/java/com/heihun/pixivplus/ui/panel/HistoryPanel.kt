@@ -50,9 +50,11 @@ object HistoryPanel {
     fun showDialog(activity: Activity) {
         try {
             val dialog = UiKit.dialog(activity)
-            dialog.setContentView(buildDialogContent(activity, dialog))
+            val content = buildDialogContent(activity, dialog)
+            dialog.setContentView(content)
             dialog.show()
             UiKit.applyDialogWidth(dialog, 0.92f, 520)
+            UiKit.animateDialogIn(content)
             ModuleLog.i(TAG, "history dialog shown")
         } catch (t: Throwable) {
             ModuleLog.e(TAG, "show dialog failed", t)
@@ -87,7 +89,7 @@ object HistoryPanel {
         }
         texts.addView(summary)
         header.addView(texts)
-        header.addView(UiKit.closeButton(activity) { dialog.dismiss() })
+        header.addView(UiKit.closeButton(activity) { UiKit.dismissAnimated(dialog, root) })
         root.addView(header)
         root.addView(UiKit.divider(activity))
 

@@ -301,7 +301,7 @@ class TranslationFeature : ConfigurableFeature(
     private fun captionDialog(activity: Activity, initial: String): CaptionDialogHolder {
         val dialog = UiKit.dialog(activity)
         val surface = UiKit.dialogSurface(activity)
-        surface.addView(UiKit.dialogHeader(activity, "简介翻译", null) { dialog.dismiss() })
+        surface.addView(UiKit.dialogHeader(activity, "简介翻译", null) { UiKit.dismissAnimated(dialog, surface) })
         surface.addView(UiKit.divider(activity))
         val scroll = ScrollView(activity)
         val body = TextView(activity).apply {
@@ -326,6 +326,7 @@ class TranslationFeature : ConfigurableFeature(
             setGravity(android.view.Gravity.CENTER)
         }
         dialog.show()
+        UiKit.animateDialogIn(surface)
         return CaptionDialogHolder(dialog, scroll, body)
     }
 
