@@ -21,7 +21,6 @@ import com.heihun.pixivplus.feature.ConfigurableFeature
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import org.json.JSONObject
-import java.lang.ref.WeakReference
 import java.net.URL
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -222,36 +221,43 @@ class CaptionFixFeature : ConfigurableFeature(
         if (caption.isBlank()) return
         val applied = appliedCaptions[id]
         if (applied != null && applied >= caption.length) return
-        applyWhenViewReady(id, caption, 0)
+        applyToCurrentActivity(id, caption, "detail", 0)
     }
 
     /**
-     * 详情页 UI 可能尚未构建完成（响应注入早于 App 首次绑定），
-     * 找不到目标 view 时短暂重试，覆盖预取数据先渲染的场景。
+     * 回填当前详情页上所有绑定该作品的 caption view。
+     * 详情 UI 可能尚未构建（响应注入早于 App 首次绑定）或部分实例尚未绑定，
+     * 找不到任何实例时短暂重试。
      */
-    private fun applyWhenViewReady(id: Long, caption: String, attempt: Int) {
-        val activity = DetailActivityTracker.get() ?: return
+    private fun applyToCurrentActivity(id: Long, caption: String, source: String, attempt: Int) {
+        val activity = DetailActivityTracker.get()
+        if (activity == null) {
+            scheduleApplyRetry(id, caption, source, attempt)
+            return
+        }
         try {
             activity.runOnUiThread {
                 try {
-                    val view = findCurrentCaptionView(activity, id)
-                    if (view == null) {
-                        if (attempt < APPLY_RETRY_LIMIT) {
-                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                applyWhenViewReady(id, caption, attempt + 1)
-                            }, APPLY_RETRY_DELAY_MS)
-                        }
+                    val views = findCurrentCaptionViews(activity, id)
+                    if (views.isEmpty()) {
+                        scheduleApplyRetry(id, caption, source, attempt)
                         return@runOnUiThread
                     }
-                    val rendered = captionTextFromView(view)
-                    if (rendered != null && rendered.length >= caption.length) return@runOnUiThread
-                    ModuleLog.i(
-                        displayName,
-                        "detail caption indexed, applying to current view id=$id len=${caption.length}"
-                    )
-                    applyCaption(view, id, caption, "detail", caption.length)
-                    appliedCaptions[id] = caption.length
-                    if (appliedCaptions.size > 2000) appliedCaptions.clear()
+                    var appliedAny = false
+                    for (view in views) {
+                        val rendered = captionTextFromView(view)
+                        if (rendered != null && rendered.length >= caption.length) continue
+                        ModuleLog.i(
+                            displayName,
+                            "applying caption to view id=$id source=$source len=${caption.length}"
+                        )
+                        applyCaption(view, id, caption, source, caption.length)
+                        appliedAny = true
+                    }
+                    if (appliedAny) {
+                        appliedCaptions[id] = caption.length
+                        if (appliedCaptions.size > 2000) appliedCaptions.clear()
+                    }
                 } catch (t: Throwable) {
                     ModuleLog.w(displayName, "apply indexed caption failed id=$id", t)
                 }
@@ -260,9 +266,16 @@ class CaptionFixFeature : ConfigurableFeature(
         }
     }
 
-    private fun findCurrentCaptionView(activity: Activity, id: Long): View? {
-        return findCaptionViews(activity.window?.decorView).firstOrNull { view ->
-            val entity = ReflectUtil.readField(view, "f") ?: return@firstOrNull false
+    private fun scheduleApplyRetry(id: Long, caption: String, source: String, attempt: Int) {
+        if (attempt >= APPLY_RETRY_LIMIT) return
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            applyToCurrentActivity(id, caption, source, attempt + 1)
+        }, APPLY_RETRY_DELAY_MS)
+    }
+
+    private fun findCurrentCaptionViews(activity: Activity, id: Long): List<View> {
+        return findCaptionViews(activity.window?.decorView).filter { view ->
+            val entity = ReflectUtil.readField(view, "f") ?: return@filter false
             (readId(entity) ?: -1L) == id
         }
     }
@@ -341,7 +354,6 @@ class CaptionFixFeature : ConfigurableFeature(
         if (!inflight.add(id)) return
 
         val cookie = readWebCookie()
-        val reference = WeakReference(view)
         executor.execute {
             try {
                 val caption = fetchWebCaption(id, cookie)
@@ -352,10 +364,9 @@ class CaptionFixFeature : ConfigurableFeature(
                 if (webCaptions.size > 2000) webCaptions.clear()
                 webCaptions[id] = caption
                 PayloadProcessor.rememberCaption(id, caption)
-                val target = reference.get() ?: return@execute
-                applyCaption(target, id, caption, "web", caption.length)
-                appliedCaptions[id] = caption.length
-                if (appliedCaptions.size > 2000) appliedCaptions.clear()
+                // PagerActivity 多个 view 实例（当前页 + 预绑定页）可能绑定同一作品，
+                // 必须遍历全部实例渲染，只渲染引用的那个会漏掉用户屏幕上的页面。
+                applyToCurrentActivity(id, caption, "web", 0)
             } finally {
                 inflight.remove(id)
             }
