@@ -65,6 +65,8 @@ class CaptionFixFeature : ConfigurableFeature(
                 "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
         const val MAX_BODY_CHARS = 2 * 1024 * 1024
         const val RETRY_INTERVAL_MS = 10 * 60 * 1000L
+        const val APPLY_RETRY_LIMIT = 5
+        const val APPLY_RETRY_DELAY_MS = 600L
     }
 
     override fun hook(host: Host) {
@@ -220,11 +222,27 @@ class CaptionFixFeature : ConfigurableFeature(
         if (caption.isBlank()) return
         val applied = appliedCaptions[id]
         if (applied != null && applied >= caption.length) return
+        applyWhenViewReady(id, caption, 0)
+    }
+
+    /**
+     * 详情页 UI 可能尚未构建完成（响应注入早于 App 首次绑定），
+     * 找不到目标 view 时短暂重试，覆盖预取数据先渲染的场景。
+     */
+    private fun applyWhenViewReady(id: Long, caption: String, attempt: Int) {
         val activity = DetailActivityTracker.get() ?: return
         try {
             activity.runOnUiThread {
                 try {
-                    val view = findCurrentCaptionView(activity, id) ?: return@runOnUiThread
+                    val view = findCurrentCaptionView(activity, id)
+                    if (view == null) {
+                        if (attempt < APPLY_RETRY_LIMIT) {
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                applyWhenViewReady(id, caption, attempt + 1)
+                            }, APPLY_RETRY_DELAY_MS)
+                        }
+                        return@runOnUiThread
+                    }
                     val rendered = captionTextFromView(view)
                     if (rendered != null && rendered.length >= caption.length) return@runOnUiThread
                     ModuleLog.i(

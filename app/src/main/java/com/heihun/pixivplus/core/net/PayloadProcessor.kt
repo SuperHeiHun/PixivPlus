@@ -179,6 +179,12 @@ object PayloadProcessor {
             illust.put("caption", caption)
             rememberCaption(id, caption)
             ModuleLog.i(TAG, "detail caption injected id=$id captionLen=${caption.length}")
+            // 回填当前详情页：App 若已用空 caption 渲染（预取/缓存路径），渲染层立即补上。
+            try {
+                captionSink?.invoke(id, caption)
+            } catch (t: Throwable) {
+                ModuleLog.w(TAG, "caption sink failed id=$id", t)
+            }
             return true
         } finally {
             fetchingCaption.set(false)
