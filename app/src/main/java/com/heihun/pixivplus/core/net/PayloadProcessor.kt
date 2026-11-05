@@ -163,6 +163,13 @@ object PayloadProcessor {
         val id = illust.optLong("id", 0L)
         if (id <= 0L) return false
         if (illust.optString("caption").isNotEmpty()) return false
+        // 本地索引已有简介（此前 fetch 过）直接注入，避免重进详情页重复同步 fetch。
+        val cached = lookupCaption(id)
+        if (!cached.isNullOrEmpty()) {
+            illust.put("caption", cached)
+            ModuleLog.i(TAG, "detail caption injected from index id=$id captionLen=${cached.length}")
+            return true
+        }
         val fetcher = captionFetcher ?: return false
         if (!fetchingCaption.compareAndSet(false, true)) return false
         try {

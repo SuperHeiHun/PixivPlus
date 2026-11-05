@@ -177,7 +177,7 @@ class CaptionFixFeature : ConfigurableFeature(
                         val cap = root.optJSONObject("illust")?.optString("caption").orEmpty()
                         if (cap.isNotEmpty()) {
                             ModuleLog.i(displayName, "caption fetched via app-api id=$id len=${cap.length}")
-                            return cap
+                            return sanitizeCaptionForApp(cap)
                         }
                     } else {
                         val root = JSONObject(text)
@@ -185,7 +185,7 @@ class CaptionFixFeature : ConfigurableFeature(
                         val cap = root.optJSONObject("body")?.optString("description").orEmpty()
                         if (cap.isNotEmpty()) {
                             ModuleLog.i(displayName, "caption fetched via web-api id=$id len=${cap.length}")
-                            return cap
+                            return sanitizeCaptionForApp(cap)
                         }
                     }
                 } finally {
@@ -379,14 +379,15 @@ class CaptionFixFeature : ConfigurableFeature(
     }
 
     private fun render(view: View, caption: String): Boolean {
+        val safe = sanitizeCaptionForApp(caption)
         val method = ReflectUtil.findMethod(view.javaClass, "c", String::class.java)
         if (method != null) {
-            ReflectUtil.invoke(view, method, caption)
+            ReflectUtil.invoke(view, method, safe)
             return true
         }
         val captionTextView = findCaptionTextView(view) ?: return false
         captionTextView.movementMethod = LinkMovementMethod.getInstance()
-        captionTextView.text = Html.fromHtml(caption, 0)
+        captionTextView.text = Html.fromHtml(safe, 0)
         return true
     }
 
@@ -411,6 +412,31 @@ class CaptionFixFeature : ConfigurableFeature(
         } catch (t: Throwable) {
             ModuleLog.w(displayName, "read web cookie failed: ${t.javaClass.simpleName}")
             null
+        }
+    }
+
+    /** 外链 <a> 标签（href 非 pixiv 站内），DOTALL 匹配跨行标签内容。 */
+    private val EXTERNAL_ANCHOR = Regex(
+        "<a\\s[^>]*href=(?:\"([^\"]*)\"|'([^']*)')[^>]*>(.*?)</a>",
+        setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+    )
+    private val INNER_TAG = Regex("<[^>]*>")
+
+    /**
+     * App 渲染层（c(String)）会剥离外链 <a> 标签，外链型简介（服务端屏蔽那种基本全是外链）
+     * 会被剥成空白。注入 / 渲染前把外部链接替换为其显示文字，站内 pixiv 链接保留标签。
+     */
+    fun sanitizeCaptionForApp(caption: String): String {
+        if (!caption.contains("<a", ignoreCase = true)) return caption
+        return EXTERNAL_ANCHOR.replace(caption) { m ->
+            val href = (m.groupValues[1].ifEmpty { m.groupValues[2] }).trim()
+            val text = m.groupValues[3].replace(INNER_TAG, " ").trim()
+            val internal = href.isEmpty() ||
+                href.startsWith("pixiv://") ||
+                href.startsWith("/") ||
+                href.contains("//pixiv.net") ||
+                href.contains("//www.pixiv.net")
+            if (internal) m.value else text.ifEmpty { href }
         }
     }
 
@@ -444,6 +470,7 @@ class CaptionFixFeature : ConfigurableFeature(
                 return null
             }
             root.optJSONObject("body")?.optString("description")?.ifEmpty { null }
+                ?.let { sanitizeCaptionForApp(it) }
         } catch (t: Throwable) {
             ModuleLog.w(displayName, "web caption fetch failed id=$id: ${t.javaClass.simpleName}: ${t.message}")
             null
