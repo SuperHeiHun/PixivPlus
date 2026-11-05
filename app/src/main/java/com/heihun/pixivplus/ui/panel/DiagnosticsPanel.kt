@@ -21,6 +21,7 @@ object DiagnosticsPanel {
         }
 
         container.addView(UiKit.infoRow(context, "宿主版本", "${Host.versionName} (${Host.versionCode})"))
+        container.addView(UiKit.infoRow(context, "模块构建", moduleBuildLabel()))
         container.addView(UiKit.infoRow(context, "当前进程", processLabel()))
         container.addView(UiKit.infoRow(context, "数据库", Runtime.databasePath ?: "未初始化（非主进程或初始化失败）"))
         container.addView(UiKit.infoRow(context, "配置", Runtime.configOrNull()?.javaClass?.simpleName ?: "未初始化"))
@@ -80,6 +81,19 @@ object DiagnosticsPanel {
     private fun processLabel(): String {
         val process = Host.processName.ifEmpty { "unknown" }
         return if (Host.isMainProcess) "$process (主进程)" else "$process (子进程)"
+    }
+
+    /** BUILD_FINGERPRINT（构建时间戳）格式化为可读时间，用于确认设备上实际安装的构建。 */
+    private fun moduleBuildLabel(): String {
+        return try {
+            val raw = com.heihun.pixivplus.BuildConfig.BUILD_FINGERPRINT
+            val ts = raw.toLongOrNull() ?: return raw
+            val time = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ROOT)
+                .format(java.util.Date(ts))
+            "$time ($raw)"
+        } catch (_: Throwable) {
+            "unknown"
+        }
     }
 
     private fun copyToClipboard(context: Context, text: String) {

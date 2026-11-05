@@ -22,6 +22,9 @@ android {
         targetSdk = 34
         versionCode = 5
         versionName = "1.0.4"
+
+        val buildTs = System.currentTimeMillis().toString()
+        buildConfigField("String", "BUILD_FINGERPRINT", "\"$buildTs\"")
     }
 
     signingConfigs {

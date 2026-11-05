@@ -66,7 +66,7 @@ object InitCoordinator {
             val process = ProcessGuard.processName(application)
             val mainProcess = ProcessGuard.isMainProcess(process)
             Host.initialize(application, process, mainProcess)
-            ModuleLog.i(TAG, "init process=$process mainProcess=$mainProcess version=${Host.versionName}(${Host.versionCode})")
+            ModuleLog.i(TAG, "init process=$process mainProcess=$mainProcess version=${Host.versionName}(${Host.versionCode}) build=${com.heihun.pixivplus.BuildConfig.BUILD_FINGERPRINT}")
 
             val config = ConfigManager(application.getSharedPreferences(CONFIG_PREFS, Context.MODE_PRIVATE))
             Runtime.config = config

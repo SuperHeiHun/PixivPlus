@@ -34,6 +34,14 @@ object PayloadProcessor {
     /** 简介索引更新回调（响应中出现更长简介时触发），供简介修复实时回填当前详情页。 */
     var captionSink: ((Long, String) -> Unit)? = null
 
+    /** 同步获取被屏蔽简介的回调（在 OkHttp 响应线程上阻塞调用），由简介修复注册。 */
+    var captionFetcher: ((Long) -> String?)? = null
+
+    /** 防递归标记：简介同步获取期间跳过响应处理。 */
+    private val fetchingCaption = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private const val TAG = "PayloadProcessor"
+
     private val counters = java.util.concurrent.atomic.AtomicLong(0)
     private val filteredCount = java.util.concurrent.atomic.AtomicLong(0)
     private val workIndex = java.util.concurrent.ConcurrentHashMap<Long, WorkInfo>()
@@ -96,7 +104,21 @@ object PayloadProcessor {
                 text.contains("\"$LIST_KEY_NOVELS\"") ||
                 text.contains("\"$LIST_KEY_CONTENTS\"")
             )
-        if (!needFilter && !needHistory && !needPremium && !needIndex) return null
+        if (!needFilter && !needHistory && !needPremium && !needIndex && !fetchingCaption.get()) {
+            return try {
+                val root = parseRoot(text) ?: return null
+                var changed = false
+                if (!fetchingCaption.get()) {
+                    val fixed = fixDetailCaptionInRoot(root)
+                    if (fixed) changed = true
+                }
+                val processed = counters.incrementAndGet()
+                if (changed) root.toString() else null
+            } catch (t: Throwable) {
+                ModuleLog.w("PayloadProcessor", "process failed", t)
+                null
+            }
+        }
 
         return try {
             val root = parseRoot(text) ?: return null
@@ -113,6 +135,11 @@ object PayloadProcessor {
             if (needPremium) {
                 changed = forcePremium(root) || changed
             }
+            // 详情响应 caption 为空（外链屏蔽）时注入恢复的简介。
+            if (!fetchingCaption.get()) {
+                val fixed = fixDetailCaptionInRoot(root)
+                if (fixed) changed = true
+            }
             val processed = counters.incrementAndGet()
             if (processed <= 3L || processed % 10L == 0L) {
                 ModuleLog.i("PayloadProcessor", "processed $processed payloads, filtered ${filteredCount.get()} item(s)")
@@ -121,6 +148,33 @@ object PayloadProcessor {
         } catch (t: Throwable) {
             ModuleLog.w("PayloadProcessor", "process failed", t)
             null
+        }
+    }
+
+    /**
+     * 详情响应 caption 为空（外链屏蔽）时，同步获取简介并注入响应 JSON。
+     * 在 OkHttp 响应线程上阻塞调用，App 解析到的是修改后的响应，
+     * 后续渲染流程（面板可见性 / 高度）全部走 App 自己的逻辑。
+     */
+    private fun fixDetailCaptionInRoot(root: Any): Boolean {
+        if (!captionFixEnabled || captionFetcher == null) return false
+        if (root !is JSONObject) return false
+        val illust = root.optJSONObject(DETAIL_KEY_ILLUST) ?: return false
+        val id = illust.optLong("id", 0L)
+        if (id <= 0L) return false
+        if (illust.optString("caption").isNotEmpty()) return false
+        val fetcher = captionFetcher ?: return false
+        if (!fetchingCaption.compareAndSet(false, true)) return false
+        try {
+            ModuleLog.i(TAG, "detail caption empty, sync fetching id=$id")
+            val caption = fetcher.invoke(id) ?: return false
+            if (caption.isBlank()) return false
+            illust.put("caption", caption)
+            rememberCaption(id, caption)
+            ModuleLog.i(TAG, "detail caption injected id=$id captionLen=${caption.length}")
+            return true
+        } finally {
+            fetchingCaption.set(false)
         }
     }
 

@@ -71,6 +71,7 @@ class CaptionFixFeature : ConfigurableFeature(
         enabled = isEnabled(ConfigStoreRegistry.store)
         PayloadProcessor.captionFixEnabled = enabled
         PayloadProcessor.captionSink = { id, caption -> onCaptionIndexed(id, caption) }
+        PayloadProcessor.captionFetcher = { id -> fetchCaptionSync(id) }
         ApiHooks.ensureInstalled(host)
 
         val viewClass = ReflectUtil.loadClass(host.classLoader, CAPTION_VIEW_CLASS)
@@ -106,6 +107,98 @@ class CaptionFixFeature : ConfigurableFeature(
         } else {
             ModuleLog.i(displayName, "illust caption hooks installed: $installed (enabled=$enabled)")
         }
+    }
+
+    /** 同步获取简介（OkHttp 响应线程上阻塞调用，供响应注入使用）。 */
+    private fun fetchCaptionSync(id: Long): String? {
+        // 优先借用 App 自身网络栈（代理 / DNS / TLS 与 App 完全一致，成功率最高）。
+        fetchCaptionViaApp(id)?.let { return it }
+        val cookie = readWebCookie()
+        return fetchWebCaption(id, cookie)
+    }
+
+    /** 借用宿主 OkHttpClient 获取简介（app-api / 网页版，网络路径与 App 相同）。 */
+    private fun fetchCaptionViaApp(id: Long): String? {
+        // okhttp 类必须从宿主 classLoader 加载（模块 classLoader 里没有）。
+        val loader = Host.classLoader
+        val requestBuilderClass = ReflectUtil.loadClass(loader, "okhttp3.Request\$Builder") ?: return null
+        val requestClass = ReflectUtil.loadClass(loader, "okhttp3.Request") ?: return null
+        val callClass = ReflectUtil.loadClass(loader, "okhttp3.Call") ?: return null
+        val responseClass = ReflectUtil.loadClass(loader, "okhttp3.Response") ?: return null
+        val clientClass = ReflectUtil.loadClass(loader, "okhttp3.OkHttpClient") ?: return null
+        val bodyClass = ReflectUtil.loadClass(loader, "okhttp3.ResponseBody") ?: return null
+
+        val client = ApiHooks.hostClient() ?: try {
+            clientClass.getDeclaredConstructor().newInstance()
+        } catch (_: Throwable) {
+            return null
+        }
+        val source = if (ApiHooks.hostClient() != null) "host" else "fresh"
+        ModuleLog.i(displayName, "caption fetch via app client=$source id=$id")
+        val token = ApiHooks.authorizationToken()
+        val headers = mapOf(
+            "User-Agent" to USER_AGENT,
+            "Accept" to "application/json, text/plain, */*",
+            "Accept-Language" to "zh-CN,zh;q=0.9,ja;q=0.8,en;q=0.7",
+            "Referer" to WEB_REFERER
+        )
+        for (url in listOf(
+            "https://app-api.pixiv.net/v1/illust/detail?illust_id=$id",
+            String.format(java.util.Locale.ROOT, WEB_API, id)
+        )) {
+            try {
+                val builder = requestBuilderClass.getDeclaredConstructor().newInstance()
+                ReflectUtil.invoke(builder, ReflectUtil.findMethod(requestBuilderClass, "url", String::class.java), url)
+                for ((name, value) in headers) {
+                    ReflectUtil.invoke(
+                        builder,
+                        ReflectUtil.findMethod(requestBuilderClass, "header", String::class.java, String::class.java),
+                        name, value
+                    )
+                }
+                if (url.contains("app-api") && !token.isNullOrEmpty()) {
+                    ReflectUtil.invoke(
+                        builder,
+                        ReflectUtil.findMethod(requestBuilderClass, "header", String::class.java, String::class.java),
+                        "Authorization", token
+                    )
+                }
+                val request = ReflectUtil.invoke(builder, ReflectUtil.findMethod(requestBuilderClass, "build")) ?: continue
+                val call = ReflectUtil.invoke(client, ReflectUtil.findMethod(clientClass, "newCall", requestClass), request) ?: continue
+                val response = ReflectUtil.invoke(call, ReflectUtil.findMethod(callClass, "execute")) ?: continue
+                try {
+                    val code = ReflectUtil.invoke(response, ReflectUtil.findMethod(responseClass, "code")) as? Int
+                    if (code != 200) continue
+                    val body = ReflectUtil.invoke(response, ReflectUtil.findMethod(responseClass, "body"))
+                    val text = body?.let { ReflectUtil.invoke(it, ReflectUtil.findMethod(bodyClass, "string")) as? String } ?: continue
+                    if (url.contains("app-api")) {
+                        val root = JSONObject(text)
+                        if (root.optBoolean("error", false)) continue
+                        val cap = root.optJSONObject("illust")?.optString("caption").orEmpty()
+                        if (cap.isNotEmpty()) {
+                            ModuleLog.i(displayName, "caption fetched via app-api id=$id len=${cap.length}")
+                            return cap
+                        }
+                    } else {
+                        val root = JSONObject(text)
+                        if (root.optBoolean("error", false)) continue
+                        val cap = root.optJSONObject("body")?.optString("description").orEmpty()
+                        if (cap.isNotEmpty()) {
+                            ModuleLog.i(displayName, "caption fetched via web-api id=$id len=${cap.length}")
+                            return cap
+                        }
+                    }
+                } finally {
+                    try {
+                        ReflectUtil.invoke(response, ReflectUtil.findMethod(responseClass, "close"))
+                    } catch (_: Throwable) {
+                    }
+                }
+            } catch (t: Throwable) {
+                ModuleLog.w(displayName, "caption fetch via app failed id=$id: ${t.javaClass.simpleName}: ${t.message}")
+            }
+        }
+        return null
     }
 
     override fun onConfigChanged(host: Host) {

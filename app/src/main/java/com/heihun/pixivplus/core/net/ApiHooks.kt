@@ -20,6 +20,27 @@ object ApiHooks {
     private val installed = AtomicBoolean(false)
     private val charStreamCalls = java.util.concurrent.atomic.AtomicInteger(0)
     private val stringCalls = java.util.concurrent.atomic.AtomicInteger(0)
+    private val authHeader = java.util.concurrent.atomic.AtomicReference<String?>(null)
+    private val hostClientRef = java.util.concurrent.atomic.AtomicReference<Any?>(null)
+
+    /** 最近一次 API 请求的 Authorization 头（App 登录态），供简介兜底的 app-api 重取使用。 */
+    fun authorizationToken(): String? = authHeader.get()
+
+    /** 捕获的宿主 OkHttpClient 实例（真实发起过 API 请求的 client 优先），供模块借用 App 网络栈。 */
+    fun hostClient(): Any? = hostClientRef.get()
+
+    /** fromChain=true 表示来自真实请求链，永远覆盖；false 仅作首次兜底。 */
+    private fun noteHostClient(client: Any?, fromChain: Boolean) {
+        if (client == null) return
+        if (fromChain) {
+            if (hostClientRef.get() == null) ModuleLog.i("ApiHooks", "host okhttp client captured (call chain)")
+            hostClientRef.set(client)
+        } else {
+            if (hostClientRef.compareAndSet(null, client)) {
+                ModuleLog.i("ApiHooks", "host okhttp client captured (builder)")
+            }
+        }
+    }
 
     fun ensureInstalled(host: Host) {
         if (!installed.compareAndSet(false, true)) return
@@ -33,6 +54,7 @@ object ApiHooks {
         hookString(clazz)
         hookBytes(clazz)
         hookSearchTrace(host)
+        hookClientCapture(host)
         PopularSearchRewrite.install(host)
         ModuleLog.i("ApiHooks", "response body hooks installed")
     }
@@ -45,7 +67,14 @@ object ApiHooks {
             XposedBridge.hookMethod(method, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     val chain = param.args?.firstOrNull() ?: return
+                    captureClientFromChain(chain)
                     val request = ReflectUtil.invoke(chain, ReflectUtil.findMethod(chain.javaClass, "request")) ?: return
+                    val auth = ReflectUtil.invoke(
+                        request,
+                        ReflectUtil.findMethod(request.javaClass, "header", String::class.java),
+                        "Authorization"
+                    ) as? String
+                    if (!auth.isNullOrEmpty()) authHeader.set(auth)
                     val url = ReflectUtil.invoke(request, ReflectUtil.findMethod(request.javaClass, "url")) ?: return
                     val text = ReflectUtil.invoke(url, ReflectUtil.findMethod(url.javaClass, "toString")) as? String ?: return
                     if (!text.contains(SEARCH_PATH)) return
@@ -68,6 +97,34 @@ object ApiHooks {
             })
         } catch (t: Throwable) {
             ModuleLog.w("ApiHooks", "hook search trace failed", t)
+        }
+    }
+
+    /**
+     * 从 CallServerInterceptor 的 chain 反射拿真实发请求的 OkHttpClient
+     * （OkHttp4: chain.call -> RealCall.client）。失败静默，由 builder 兜底。
+     */
+    private fun captureClientFromChain(chain: Any) {
+        if (hostClientRef.get() != null) return
+        try {
+            val call = XposedHelpers.getObjectField(chain, "call") ?: return
+            noteHostClient(XposedHelpers.getObjectField(call, "client"), fromChain = true)
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** 兜底：捕获 OkHttpClient$Builder.build() 产物（App 启动期即触发，早于首个请求）。 */
+    private fun hookClientCapture(host: Host) {
+        val builderClass = ReflectUtil.loadClass(host.classLoader, "okhttp3.OkHttpClient\$Builder") ?: return
+        val method = ReflectUtil.findMethods(builderClass, "build").firstOrNull { it.parameterCount == 0 } ?: return
+        try {
+            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    noteHostClient(param.result, fromChain = false)
+                }
+            })
+        } catch (t: Throwable) {
+            ModuleLog.w("ApiHooks", "hook client capture failed", t)
         }
     }
 
