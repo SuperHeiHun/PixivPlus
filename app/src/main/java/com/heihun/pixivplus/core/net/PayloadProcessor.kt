@@ -31,6 +31,9 @@ object PayloadProcessor {
     @Volatile
     var authorSink: ((Long, String?, String?, String?) -> Unit)? = null
 
+    /** 简介索引更新回调（响应中出现更长简介时触发），供简介修复实时回填当前详情页。 */
+    var captionSink: ((Long, String) -> Unit)? = null
+
     private val counters = java.util.concurrent.atomic.AtomicLong(0)
     private val filteredCount = java.util.concurrent.atomic.AtomicLong(0)
     private val workIndex = java.util.concurrent.ConcurrentHashMap<Long, WorkInfo>()
@@ -314,6 +317,15 @@ object PayloadProcessor {
             originalUrl = originalUrl ?: existing?.originalUrl,
             pageImages = pageImages.ifEmpty { existing?.pageImages.orEmpty() }
         )
+        if (!caption.isNullOrEmpty() && captionSink != null) {
+            val previousCaption = existing?.caption
+            if (previousCaption.isNullOrEmpty() || caption.length > previousCaption.length) {
+                try {
+                    captionSink?.invoke(id, caption)
+                } catch (_: Throwable) {
+                }
+            }
+        }
     }
 
     private fun singlePageUrl(item: JSONObject): String? {

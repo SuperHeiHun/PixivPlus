@@ -1,8 +1,10 @@
 package com.heihun.pixivplus.feature.caption
 
+import android.app.Activity
 import android.text.Html
 import android.text.method.LinkMovementMethod
 import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
 import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.config.ConfigKeys
@@ -11,6 +13,7 @@ import com.heihun.pixivplus.core.net.ApiHooks
 import com.heihun.pixivplus.core.net.PayloadProcessor
 import com.heihun.pixivplus.core.net.ProxyHttp
 import com.heihun.pixivplus.core.net.ProxySettings
+import com.heihun.pixivplus.core.util.DetailActivityTracker
 import com.heihun.pixivplus.core.util.EntityReader
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
@@ -48,6 +51,9 @@ class CaptionFixFeature : ConfigurableFeature(
     private val inflight = Collections.newSetFromMap(ConcurrentHashMap<Long, Boolean>())
     private val retryAfter = ConcurrentHashMap<Long, Long>()
 
+    /** 已回填到界面的简介长度（id → 长度），避免相同简介反复触发渲染。 */
+    private val appliedCaptions = ConcurrentHashMap<Long, Int>()
+
     private companion object {
         const val CAPTION_VIEW_CLASS =
             "jp.pxv.android.feature.component.androidview.DetailCaptionAndTagsView"
@@ -64,6 +70,7 @@ class CaptionFixFeature : ConfigurableFeature(
     override fun hook(host: Host) {
         enabled = isEnabled(ConfigStoreRegistry.store)
         PayloadProcessor.captionFixEnabled = enabled
+        PayloadProcessor.captionSink = { id, caption -> onCaptionIndexed(id, caption) }
         ApiHooks.ensureInstalled(host)
 
         val viewClass = ReflectUtil.loadClass(host.classLoader, CAPTION_VIEW_CLASS)
@@ -104,8 +111,89 @@ class CaptionFixFeature : ConfigurableFeature(
     override fun onConfigChanged(host: Host) {
         enabled = isEnabled(ConfigStoreRegistry.store)
         PayloadProcessor.captionFixEnabled = enabled
+        if (!enabled) PayloadProcessor.captionSink = null
         retryAfter.clear()
         ModuleLog.i(displayName, "插画简介修复已${if (enabled) "开启" else "关闭"}")
+    }
+
+    /**
+     * 详情 / 列表响应把更长简介写入索引后，回填当前正在浏览的详情页。
+     *
+     * 首次打开被屏蔽简介的作品时，setIllust 触发早于详情响应：当时本地索引
+     * 为空、网页兜底可能不可用，简介只能等索引建立后由这里补渲染。
+     */
+    private fun onCaptionIndexed(id: Long, caption: String) {
+        if (!enabled) return
+        if (caption.isBlank()) return
+        val applied = appliedCaptions[id]
+        if (applied != null && applied >= caption.length) return
+        val activity = DetailActivityTracker.get() ?: return
+        try {
+            activity.runOnUiThread {
+                try {
+                    val view = findCurrentCaptionView(activity, id) ?: return@runOnUiThread
+                    val rendered = captionTextFromView(view)
+                    if (rendered != null && rendered.length >= caption.length) return@runOnUiThread
+                    ModuleLog.i(
+                        displayName,
+                        "detail caption indexed, applying to current view id=$id len=${caption.length}"
+                    )
+                    applyCaption(view, id, caption, "detail", caption.length)
+                    appliedCaptions[id] = caption.length
+                    if (appliedCaptions.size > 2000) appliedCaptions.clear()
+                } catch (t: Throwable) {
+                    ModuleLog.w(displayName, "apply indexed caption failed id=$id", t)
+                }
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun findCurrentCaptionView(activity: Activity, id: Long): View? {
+        return findCaptionViews(activity.window?.decorView).firstOrNull { view ->
+            val entity = ReflectUtil.readField(view, "f") ?: return@firstOrNull false
+            (readId(entity) ?: -1L) == id
+        }
+    }
+
+    private fun findCaptionViews(root: View?): List<View> {
+        val result = ArrayList<View>()
+        collectCaptionViews(root, result)
+        return result
+    }
+
+    private fun collectCaptionViews(root: View?, out: MutableList<View>) {
+        if (root == null) return
+        if (root.javaClass.name == CAPTION_VIEW_CLASS) {
+            out.add(root)
+            return
+        }
+        if (root is ViewGroup) {
+            for (index in 0 until root.childCount) {
+                collectCaptionViews(root.getChildAt(index), out)
+            }
+        }
+    }
+
+    /** 读取简介控件上已渲染的文本（简介修复恢复后的内容）。 */
+    private fun captionTextFromView(view: View): String? {
+        return try {
+            val textId = view.resources.getIdentifier(
+                "caption_text_view",
+                "id",
+                view.context.packageName
+            )
+            if (textId != 0) {
+                view.findViewById<TextView>(textId)?.text?.toString()?.let { text ->
+                    if (text.isNotBlank()) return text
+                }
+            }
+            val holder = ReflectUtil.readField(view, "e") ?: return null
+            val textView = ReflectUtil.readField(holder, "e") as? TextView ?: return null
+            textView.text?.toString()?.takeIf { it.isNotBlank() }
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private fun onIllustBound(view: View?, entity: Any?) {
@@ -155,6 +243,8 @@ class CaptionFixFeature : ConfigurableFeature(
                 PayloadProcessor.rememberCaption(id, caption)
                 val target = reference.get() ?: return@execute
                 applyCaption(target, id, caption, "web", caption.length)
+                appliedCaptions[id] = caption.length
+                if (appliedCaptions.size > 2000) appliedCaptions.clear()
             } finally {
                 inflight.remove(id)
             }

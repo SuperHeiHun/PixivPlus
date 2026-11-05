@@ -10,7 +10,7 @@ Telegram频道：<https://t.me/HeiHun_Sub>
 | 项目 | 版本 |
 | --- | --- |
 | 宿主应用 | Pixiv Android 6.192.1（versionCode 67458，已实测） |
-| 模块版本 | 1.0.3 (4) |
+| 模块版本 | 1.0.4 (5) |
 | 系统要求 | Android 8.0（API 26）及以上 |
 | 框架要求 | LSPosed / Xposed，作用域需勾选「Pixiv」 |
 
