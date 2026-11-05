@@ -34,11 +34,8 @@ object PayloadProcessor {
     /** 简介索引更新回调（响应中出现更长简介时触发），供简介修复实时回填当前详情页。 */
     var captionSink: ((Long, String) -> Unit)? = null
 
-    /** 同步获取被屏蔽简介的回调（在 OkHttp 响应线程上阻塞调用），由简介修复注册。 */
-    var captionFetcher: ((Long) -> String?)? = null
-
-    /** 防递归标记：简介同步获取期间跳过响应处理。 */
-    private val fetchingCaption = java.util.concurrent.atomic.AtomicBoolean(false)
+    /** 异步预取被屏蔽简介的回调（立即返回，不阻塞响应线程），由简介修复注册。 */
+    var captionPrefetcher: ((Long) -> Unit)? = null
 
     private const val TAG = "PayloadProcessor"
 
@@ -104,14 +101,12 @@ object PayloadProcessor {
                 text.contains("\"$LIST_KEY_NOVELS\"") ||
                 text.contains("\"$LIST_KEY_CONTENTS\"")
             )
-        if (!needFilter && !needHistory && !needPremium && !needIndex && !fetchingCaption.get()) {
+        if (!needFilter && !needHistory && !needPremium && !needIndex) {
             return try {
                 val root = parseRoot(text) ?: return null
                 var changed = false
-                if (!fetchingCaption.get()) {
-                    val fixed = fixDetailCaptionInRoot(root)
-                    if (fixed) changed = true
-                }
+                val fixed = fixDetailCaptionInRoot(root)
+                if (fixed) changed = true
                 val processed = counters.incrementAndGet()
                 if (changed) root.toString() else null
             } catch (t: Throwable) {
@@ -136,10 +131,8 @@ object PayloadProcessor {
                 changed = forcePremium(root) || changed
             }
             // 详情响应 caption 为空（外链屏蔽）时注入恢复的简介。
-            if (!fetchingCaption.get()) {
-                val fixed = fixDetailCaptionInRoot(root)
-                if (fixed) changed = true
-            }
+            val fixed = fixDetailCaptionInRoot(root)
+            if (fixed) changed = true
             val processed = counters.incrementAndGet()
             if (processed <= 3L || processed % 10L == 0L) {
                 ModuleLog.i("PayloadProcessor", "processed $processed payloads, filtered ${filteredCount.get()} item(s)")
@@ -152,43 +145,30 @@ object PayloadProcessor {
     }
 
     /**
-     * 详情响应 caption 为空（外链屏蔽）时，同步获取简介并注入响应 JSON。
-     * 在 OkHttp 响应线程上阻塞调用，App 解析到的是修改后的响应，
-     * 后续渲染流程（面板可见性 / 高度）全部走 App 自己的逻辑。
+     * 详情响应 caption 为空（外链屏蔽）时：
+     * - 本地索引已有简介（预取 / 此前 fetch 过）：0ms 注入，App 解析修改后响应自行渲染；
+     * - 索引未命中：触发异步预取并放行原响应（页面不阻塞），简介由渲染层回填。
      */
     private fun fixDetailCaptionInRoot(root: Any): Boolean {
-        if (!captionFixEnabled || captionFetcher == null) return false
+        if (!captionFixEnabled) return false
         if (root !is JSONObject) return false
         val illust = root.optJSONObject(DETAIL_KEY_ILLUST) ?: return false
         val id = illust.optLong("id", 0L)
         if (id <= 0L) return false
         if (illust.optString("caption").isNotEmpty()) return false
-        // 本地索引已有简介（此前 fetch 过）直接注入，避免重进详情页重复同步 fetch。
         val cached = lookupCaption(id)
         if (!cached.isNullOrEmpty()) {
             illust.put("caption", cached)
             ModuleLog.i(TAG, "detail caption injected from index id=$id captionLen=${cached.length}")
             return true
         }
-        val fetcher = captionFetcher ?: return false
-        if (!fetchingCaption.compareAndSet(false, true)) return false
+        // 未命中：异步预取（不阻塞响应线程），完成后由渲染层回填当前详情页。
         try {
-            ModuleLog.i(TAG, "detail caption empty, sync fetching id=$id")
-            val caption = fetcher.invoke(id) ?: return false
-            if (caption.isBlank()) return false
-            illust.put("caption", caption)
-            rememberCaption(id, caption)
-            ModuleLog.i(TAG, "detail caption injected id=$id captionLen=${caption.length}")
-            // 回填当前详情页：App 若已用空 caption 渲染（预取/缓存路径），渲染层立即补上。
-            try {
-                captionSink?.invoke(id, caption)
-            } catch (t: Throwable) {
-                ModuleLog.w(TAG, "caption sink failed id=$id", t)
-            }
-            return true
-        } finally {
-            fetchingCaption.set(false)
+            captionPrefetcher?.invoke(id)
+        } catch (t: Throwable) {
+            ModuleLog.w(TAG, "caption prefetch kick failed id=$id", t)
         }
+        return false
     }
 
     fun processedCount(): Long = counters.get()

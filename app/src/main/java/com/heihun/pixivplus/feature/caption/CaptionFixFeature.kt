@@ -1,6 +1,7 @@
 package com.heihun.pixivplus.feature.caption
 
 import android.app.Activity
+import android.content.Intent
 import android.text.Html
 import android.text.method.LinkMovementMethod
 import android.view.View
@@ -72,8 +73,9 @@ class CaptionFixFeature : ConfigurableFeature(
         enabled = isEnabled(ConfigStoreRegistry.store)
         PayloadProcessor.captionFixEnabled = enabled
         PayloadProcessor.captionSink = { id, caption -> onCaptionIndexed(id, caption) }
-        PayloadProcessor.captionFetcher = { id -> fetchCaptionSync(id) }
+        PayloadProcessor.captionPrefetcher = { id -> kickPrefetch(id) }
         ApiHooks.ensureInstalled(host)
+        hookDetailActivityIntents(host)
 
         val viewClass = ReflectUtil.loadClass(host.classLoader, CAPTION_VIEW_CLASS)
         val illustClass = ReflectUtil.loadClass(host.classLoader, PIXIV_ILLUST_CLASS)
@@ -110,7 +112,7 @@ class CaptionFixFeature : ConfigurableFeature(
         }
     }
 
-    /** 同步获取简介（OkHttp 响应线程上阻塞调用，供响应注入使用）。 */
+    /** 同步获取简介（后台线程调用，供预取使用）。 */
     private fun fetchCaptionSync(id: Long): String? {
         // 优先借用 App 自身网络栈（代理 / DNS / TLS 与 App 完全一致，成功率最高）。
         fetchCaptionViaApp(id)?.let { return it }
@@ -118,7 +120,85 @@ class CaptionFixFeature : ConfigurableFeature(
         return fetchWebCaption(id, cookie)
     }
 
-    /** 借用宿主 OkHttpClient 获取简介（app-api / 网页版，网络路径与 App 相同）。 */
+    private val DETAIL_ACTIVITY_CLASSES = arrayOf(
+        "jp.pxv.android.feature.illustviewer.detail.IllustDetailSingleActivity",
+        "jp.pxv.android.feature.illustviewer.detail.IllustDetailPagerActivity"
+    )
+
+    /** 详情 Activity 创建时从 intent 提前预取简介，与页面加载并行，避免响应或回填串行等待。 */
+    private fun hookDetailActivityIntents(host: Host) {
+        var installed = 0
+        for (name in DETAIL_ACTIVITY_CLASSES) {
+            val clazz = ReflectUtil.loadClass(host.classLoader, name) ?: continue
+            try {
+                XposedBridge.hookAllMethods(clazz, "onCreate", object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val activity = param.thisObject as? Activity ?: return
+                        val id = extractIllustIdFromIntent(activity.intent) ?: return
+                        ModuleLog.d(displayName, "detail intent detected id=$id (${clazz.simpleName})")
+                        kickPrefetch(id)
+                    }
+                })
+                installed++
+            } catch (t: Throwable) {
+                ModuleLog.w(displayName, "hook detail activity intent failed: $name", t)
+            }
+        }
+        if (installed > 0) {
+            ModuleLog.i(displayName, "detail activity prefetch hooks installed: $installed")
+        }
+    }
+
+    /** 深链 pixiv://illusts/{id} / 跳转 intent 中的作品 id。 */
+    private fun extractIllustIdFromIntent(intent: Intent?): Long? {
+        if (intent == null) return null
+        return try {
+            val data = intent.data
+            val fromData = data?.lastPathSegment
+                ?.takeIf { it.matches(Regex("\\d{4,15}")) }
+                ?.toLongOrNull()
+            if (fromData != null && fromData > 0L) return fromData
+            val extras = intent.extras ?: return null
+            for (key in extras.keySet()) {
+                if (!key.lowercase().contains("illust")) continue
+                val value = extras.get(key) ?: continue
+                val id = when (value) {
+                    is Long -> value
+                    is Int -> value.toLong()
+                    is String -> value.toLongOrNull()
+                    else -> null
+                } ?: continue
+                if (id in 1000..999_999_999_999L) return id
+            }
+            null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /** 异步预取：去重后立即返回，结果写入缓存并回填当前详情页。 */
+    private fun kickPrefetch(id: Long) {
+        if (id <= 0L) return
+        if (!webCaptions[id].isNullOrEmpty()) return
+        if (!PayloadProcessor.lookupCaption(id).isNullOrEmpty()) return
+        if (!inflight.add(id)) return
+        executor.execute {
+            try {
+                val caption = fetchCaptionSync(id) ?: return@execute
+                if (webCaptions.size > 2000) webCaptions.clear()
+                webCaptions[id] = caption
+                // 仅在详情页确实打开时写入注入索引，防止 intent 误判的 id 污染缓存。
+                if (DetailActivityTracker.get() != null) {
+                    PayloadProcessor.rememberCaption(id, caption)
+                }
+                applyToCurrentActivity(id, caption, "prefetch", 0)
+            } finally {
+                inflight.remove(id)
+            }
+        }
+    }
+
+    /** 借用宿主 OkHttpClient 获取简介（web-api / app-api，网络路径与 App 相同）。 */
     private fun fetchCaptionViaApp(id: Long): String? {
         // okhttp 类必须从宿主 classLoader 加载（模块 classLoader 里没有）。
         val loader = Host.classLoader
@@ -143,9 +223,10 @@ class CaptionFixFeature : ConfigurableFeature(
             "Accept-Language" to "zh-CN,zh;q=0.9,ja;q=0.8,en;q=0.7",
             "Referer" to WEB_REFERER
         )
+        // web-api 优先：被屏蔽作品 app-api 必然返回空 caption，先查 app-api 纯浪费一个 RTT。
         for (url in listOf(
-            "https://app-api.pixiv.net/v1/illust/detail?illust_id=$id",
-            String.format(java.util.Locale.ROOT, WEB_API, id)
+            String.format(java.util.Locale.ROOT, WEB_API, id),
+            "https://app-api.pixiv.net/v1/illust/detail?illust_id=$id"
         )) {
             try {
                 val builder = requestBuilderClass.getDeclaredConstructor().newInstance()
