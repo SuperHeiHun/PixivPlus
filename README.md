@@ -154,7 +154,7 @@ Android / iOS 版 Pixiv 为满足应用商店合规要求，会隐藏包含 URL 
 ./gradlew testDebugUnitTest lintDebug   # 单元测试与静态检查
 ```
 
-CI（`.github/workflows/release.yml`）会在推送 `v*` 标签时自动构建发布包并创建 GitHub Release。
+CI（`.github/workflows/release.yml`）会在推送 `v*` 标签时自动构建发布包并创建 GitHub Release，附件与 artifact 统一命名为 `PixivPlus-<版本号>.apk`。
 
 ## 已知限制
 

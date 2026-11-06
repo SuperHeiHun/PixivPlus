@@ -63,11 +63,18 @@ jobs:
           PLP_KEY_PASSWORD: ${{ steps.keystore.outputs.key_password }}
         run: ./gradlew --no-daemon assembleRelease
 
+      - name: Rename APK with app name
+        run: |
+          version=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          mkdir -p app/build-out/outputs/apk/release/dist
+          cp app/build-out/outputs/apk/release/*.apk "app/build-out/outputs/apk/release/dist/PixivPlus-${version}.apk"
+          echo "APK artifact: PixivPlus-${version}.apk"
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: PixivPlus-release-apk
-          path: app/build-out/outputs/apk/release/*.apk
+          path: app/build-out/outputs/apk/release/dist/*.apk
           if-no-files-found: error
 
       - name: Prepare release notes
@@ -84,7 +91,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build-out/outputs/apk/release/*.apk
+          files: app/build-out/outputs/apk/release/dist/*.apk
           body_path: release-body.md
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', inputs.version) }}
           name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('PixivPlus {0}', inputs.version) }}
