@@ -104,11 +104,11 @@ object PayloadProcessor {
         if (!needFilter && !needHistory && !needPremium && !needIndex) {
             return try {
                 val root = parseRoot(text) ?: return null
-                var changed = false
+                // 无标记负载只做简介注入检查；仅在实际改写时计数，保持「已处理」语义与测试契约一致。
                 val fixed = fixDetailCaptionInRoot(root)
-                if (fixed) changed = true
-                val processed = counters.incrementAndGet()
-                if (changed) root.toString() else null
+                if (!fixed) return null
+                counters.incrementAndGet()
+                root.toString()
             } catch (t: Throwable) {
                 ModuleLog.w("PayloadProcessor", "process failed", t)
                 null
