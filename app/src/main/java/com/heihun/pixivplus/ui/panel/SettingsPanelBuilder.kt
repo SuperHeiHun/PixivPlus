@@ -37,7 +37,7 @@ object SettingsPanelBuilder {
 
     private const val TAG = "SettingsPanel"
 
-    private enum class Screen(val title: String, val subtitle: String) {
+    enum class Screen(val title: String, val subtitle: String) {
         MAIN("PixivPlus", "本地增强设置"),
         FEATURES("功能开关", "浏览历史、过滤、Premium、广告与简介修复"),
         FILTERS("过滤规则", "关键词、标签与作者"),
@@ -50,7 +50,8 @@ object SettingsPanelBuilder {
         ABOUT("关于", "版本与使用提示")
     }
 
-    fun show(activity: Activity) {
+    /** initialScreen 可直达二级页（如屏蔽设定页入口直达「过滤规则」），返回键仍先回主页。 */
+    fun show(activity: Activity, initialScreen: Screen = Screen.MAIN) {
         try {
             val dialog = UiKit.dialog(activity)
             // 面板为全屏不透明表面，去掉遮罩：避免入场动画期间遮罩先于内容闪现 / 提前消失。
@@ -67,6 +68,9 @@ object SettingsPanelBuilder {
             dialog.show()
             UiKit.styleFullScreenWindow(dialog)
 
+            // 直达二级页打开的面板（如屏蔽设定页入口）：返回键直接关闭面板回到宿主页面，
+            // 不再先跳模块主页；普通入口保持「返回 → 回主页」的既有行为。
+            val deepLinked = initialScreen != Screen.MAIN
             var current = Screen.MAIN
             fun showScreen(screen: Screen, fromBack: Boolean = false) {
                 val goingBack = fromBack || (current != Screen.MAIN && screen == Screen.MAIN)
@@ -83,7 +87,11 @@ object SettingsPanelBuilder {
             }
 
             dialog.setOnKeyListener { _, keyCode, event ->
-                if (keyCode == KeyEvent.KEYCODE_BACK && current != Screen.MAIN) {
+                if (keyCode != KeyEvent.KEYCODE_BACK) return@setOnKeyListener false
+                if (deepLinked) {
+                    if (event.action == KeyEvent.ACTION_UP) dialog.dismiss()
+                    true
+                } else if (current != Screen.MAIN) {
                     if (event.action == KeyEvent.ACTION_UP) {
                         showScreen(Screen.MAIN, fromBack = true)
                     }
@@ -92,8 +100,8 @@ object SettingsPanelBuilder {
                     false
                 }
             }
-            showScreen(Screen.MAIN)
-            ModuleLog.i(TAG, "panel shown")
+            showScreen(initialScreen)
+            ModuleLog.i(TAG, "panel shown (initial=${initialScreen.name})")
         } catch (t: Throwable) {
             ModuleLog.e(TAG, "show failed", t)
         }

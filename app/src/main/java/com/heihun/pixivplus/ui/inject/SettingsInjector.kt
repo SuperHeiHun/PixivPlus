@@ -9,8 +9,10 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.heihun.pixivplus.adapt.anchors.SettingsAnchors
 import com.heihun.pixivplus.core.Host
+import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.util.ReflectUtil
+import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.ui.UiKit
 import com.heihun.pixivplus.ui.panel.SettingsPanelBuilder
 import de.robv.android.xposed.XC_MethodHook
@@ -20,23 +22,32 @@ object SettingsInjector {
 
     private const val TAG = "SettingsInjector"
     private const val ROW_TAG = "pixiv_local_plus_settings_entry"
+    private const val MUTE_ROW_TAG = "pixiv_local_plus_mute_entry"
+
+    /** 宿主「屏蔽设定」页（抽屉菜单「屏蔽设定」入口），底部原广告容器可复用为模块入口。 */
+    private const val MUTE_ACTIVITY_CLASS = "jp.pxv.android.feature.mute.setting.MuteSettingActivity"
 
     fun install() {
+        hookOnCreate(SettingsAnchors.SETTING_ACTIVITY_CLASS) { inject(it) }
+        hookOnCreate(MUTE_ACTIVITY_CLASS) { injectMuteEntry(it) }
+    }
+
+    private fun hookOnCreate(className: String, onCreated: (Activity) -> Unit) {
         try {
-            val clazz = ReflectUtil.loadClass(Host.classLoader, SettingsAnchors.SETTING_ACTIVITY_CLASS)
+            val clazz = ReflectUtil.loadClass(Host.classLoader, className)
             if (clazz == null) {
-                ModuleLog.e(TAG, "settings activity class not found: ${SettingsAnchors.SETTING_ACTIVITY_CLASS}")
+                ModuleLog.e(TAG, "activity class not found: $className")
                 return
             }
             XposedHelpers.findAndHookMethod(clazz, "onCreate", Bundle::class.java, object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val activity = param.thisObject as? Activity ?: return
-                    inject(activity)
+                    onCreated(activity)
                 }
             })
-            ModuleLog.i(TAG, "settings hook installed on ${clazz.name}")
+            ModuleLog.i(TAG, "hook installed on ${clazz.name}")
         } catch (t: Throwable) {
-            ModuleLog.e(TAG, "install failed", t)
+            ModuleLog.e(TAG, "install failed for $className", t)
         }
     }
 
@@ -49,7 +60,11 @@ object SettingsInjector {
             }
             val existing: View? = container.findViewWithTag(ROW_TAG)
             if (existing != null) return
-            val row = buildEntryRow(activity)
+            val row = buildEntryRow(
+                activity,
+                "PixivPlus",
+                "本地历史 / 过滤 / Premium / 去广告"
+            ) { openPanel(it) }
             row.tag = ROW_TAG
             container.addView(
                 row,
@@ -62,6 +77,58 @@ object SettingsInjector {
             ModuleLog.i(TAG, "settings row injected into ${container.javaClass.simpleName}")
         } catch (t: Throwable) {
             ModuleLog.e(TAG, "inject failed", t)
+        }
+    }
+
+    /**
+     * 宿主「屏蔽设定」页（MuteSettingActivity）：内容区为 ComposeView，
+     * 底部有专属广告容器 ad_container（RelativeLayout alignParentBottom，
+     * ComposeView layout_above 之；模块本就拦截广告，容器常态为空）。
+     * 入口行放进该容器即成底部入口条，Compose 内容自动上移让位。
+     */
+    fun injectMuteEntry(activity: Activity) {
+        try {
+            // 入口直达过滤规则页；本地过滤主开关关闭时不注入（与 blockmenu 功能同一开关）。
+            if (!ConfigStoreRegistry.store.get(ConfigKeys.FILTER_ENABLED)) {
+                ModuleLog.i(TAG, "filter feature disabled, skip mute entry")
+                return
+            }
+            val adId = activity.resources.getIdentifier("ad_container", "id", activity.packageName)
+            if (adId == 0) {
+                ModuleLog.w(TAG, "ad_container id not found")
+                return
+            }
+            val container = activity.window?.decorView?.findViewById<ViewGroup>(adId) ?: run {
+                ModuleLog.w(TAG, "ad_container not found in mute setting activity")
+                return
+            }
+            if (container.findViewWithTag<View>(MUTE_ROW_TAG) != null) return
+            container.removeAllViews()
+            val row = buildEntryRow(
+                activity,
+                "PixivPlus 屏蔽项管理",
+                "关键词 / 标签 / 作者 屏蔽规则"
+            ) { openFilterRules(it) }
+            row.tag = MUTE_ROW_TAG
+            container.addView(
+                row,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            ModuleLog.i(TAG, "mute filter entry injected into ad_container")
+        } catch (t: Throwable) {
+            ModuleLog.e(TAG, "inject mute entry failed", t)
+        }
+    }
+
+    private fun openFilterRules(activity: Activity) {
+        try {
+            if (activity.isFinishing) return
+            SettingsPanelBuilder.show(activity, SettingsPanelBuilder.Screen.FILTERS)
+        } catch (t: Throwable) {
+            ModuleLog.e(TAG, "open filter rules failed", t)
         }
     }
 
@@ -90,7 +157,12 @@ object SettingsInjector {
         return content
     }
 
-    private fun buildEntryRow(activity: Activity): LinearLayout {
+    private fun buildEntryRow(
+        activity: Activity,
+        title: String,
+        subtitle: String,
+        onClick: (Activity) -> Unit
+    ): LinearLayout {
         val palette = UiKit.colors(activity)
         val titleColor = resolveThemeColor(activity, android.R.attr.textColorPrimary, palette.onSurface)
         val subtitleColor = resolveThemeColor(activity, android.R.attr.textColorSecondary, palette.onSurfaceVariant)
@@ -109,13 +181,13 @@ object SettingsInjector {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         texts.addView(TextView(activity).apply {
-            text = "PixivPlus"
+            text = title
             textSize = 16f
             setTextColor(titleColor)
             typeface = com.heihun.pixivplus.ui.theme.Md3.medium
         })
         texts.addView(TextView(activity).apply {
-            text = "本地历史 / 过滤 / Premium / 去广告"
+            text = subtitle
             textSize = 12f
             setTextColor(subtitleColor)
             setPadding(0, UiKit.dp(activity, 2), 0, 0)
@@ -128,9 +200,9 @@ object SettingsInjector {
             gravity = Gravity.CENTER
             setPadding(UiKit.dp(activity, 12), 0, 0, 0)
         })
-        row.setOnClickListener { openPanel(activity) }
+        row.setOnClickListener { onClick(activity) }
         row.setOnLongClickListener {
-            openPanel(activity)
+            onClick(activity)
             true
         }
         return row
