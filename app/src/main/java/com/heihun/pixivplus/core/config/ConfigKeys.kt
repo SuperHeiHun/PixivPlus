@@ -62,6 +62,18 @@ object ConfigKeys {
     /** 小说保存位置的 SAF tree URI，首次保存时由用户选择，仅保留在当前设备。 */
     val NOVEL_SAVE_FOLDER_URI = ConfigKey("novel_save_folder_uri", "", { it }, { it })
 
+    /** 侧边栏精简模式：开启后隐藏 drawer_slim_items 列出的菜单项。 */
+    val DRAWER_SLIM_ENABLED = ConfigKey("drawer_slim_enabled", false, { it.toString() }, { it.toBoolean() })
+
+    /** 精简模式下隐藏的侧边栏菜单项资源名（drawer_menu_*），逗号分隔。 */
+    val DRAWER_SLIM_ITEMS = ConfigKey(
+        "drawer_slim_items",
+        "drawer_menu_upload,drawer_menu_works,drawer_menu_collection,drawer_menu_novel_marker," +
+            "drawer_menu_connections,drawer_menu_following,drawer_menu_follower,drawer_menu_mypixiv",
+        { it },
+        { it }
+    )
+
     /** 不写入备份文件的敏感 / 设备相关配置；恢复时保留本机现有值。 */
     val LOCAL_ONLY_NAMES = setOf(
         PROXY_PASSWORD.name,

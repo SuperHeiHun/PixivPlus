@@ -28,6 +28,7 @@ import com.heihun.pixivplus.core.net.FilterRules
 import com.heihun.pixivplus.core.net.ProxyMode
 import com.heihun.pixivplus.core.net.ProxySettings
 import com.heihun.pixivplus.core.net.ProxySpec
+import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.ui.ActivityResultBridge
 import com.heihun.pixivplus.ui.UiKit
 import com.heihun.pixivplus.ui.theme.Md3
@@ -41,6 +42,7 @@ object SettingsPanelBuilder {
         FEATURES("功能开关", "浏览历史、过滤、Premium、广告与简介修复"),
         FILTERS("过滤规则", "关键词、标签与作者"),
         NOVEL_SAVE("小说保存", "PDF / TXT 导出与保存位置"),
+        DRAWER_SLIM("侧边栏精简", "隐藏主抽屉菜单的低频项"),
         PROXY("网络代理", "模块网页请求使用的代理"),
         BACKUP("数据备份", "本地文件夹与 WebDAV"),
         HISTORY("浏览历史", "记录策略与历史列表"),
@@ -143,6 +145,7 @@ object SettingsPanelBuilder {
                 renderFilterCard(activity, card)
             }
             Screen.NOVEL_SAVE -> buildNovelSavePage(activity, body)
+            Screen.DRAWER_SLIM -> buildDrawerSlimPage(activity, body)
             Screen.PROXY -> {
                 val card = UiKit.card(activity)
                 body.addView(card)
@@ -184,6 +187,7 @@ object SettingsPanelBuilder {
         addMenuRow(features, activity, "过滤规则", filterOverview(), Screen.FILTERS, open)
         addMenuRow(features, activity, "浏览历史", historySummary(), Screen.HISTORY, open)
         addMenuRow(features, activity, "小说保存", novelSaveSummary(), Screen.NOVEL_SAVE, open)
+        addMenuRow(features, activity, "侧边栏精简", drawerSlimSummary(), Screen.DRAWER_SLIM, open)
         body.addView(features)
 
         body.addView(UiKit.sectionTitle(activity, "网络与数据"))
@@ -263,6 +267,12 @@ object SettingsPanelBuilder {
             "详情页菜单翻译简介，小说页菜单整篇翻译正文",
             configValue(ConfigKeys.TRANSLATE_ENABLED)
         ) { checked -> putConfig(ConfigKeys.TRANSLATE_ENABLED, checked) })
+        addRow(card, UiKit.switchRow(
+            activity,
+            "侧边栏精简",
+            "在主抽屉菜单末尾提供一键隐藏低频菜单项的按钮",
+            configValue(ConfigKeys.DRAWER_SLIM_ENABLED)
+        ) { checked -> putConfig(ConfigKeys.DRAWER_SLIM_ENABLED, checked) })
         val translateTargets = com.heihun.pixivplus.core.translate.Translator.TARGETS
         var targetLabelView: TextView? = null
         val targetRow = UiKit.selectRow(
@@ -297,6 +307,77 @@ object SettingsPanelBuilder {
                 "这些开关只影响本地模块行为；本地 Premium 覆盖不会解锁服务端限制功能。"
             )
         )
+    }
+
+    private fun buildDrawerSlimPage(activity: Activity, body: LinearLayout) {
+        val card = UiKit.card(activity)
+        addRow(card, UiKit.switchRow(
+            activity,
+            "启用精简模式",
+            "开启后隐藏下方勾选的菜单项；关闭恢复全部",
+            configValue(ConfigKeys.DRAWER_SLIM_ENABLED)
+        ) { checked -> putConfig(ConfigKeys.DRAWER_SLIM_ENABLED, checked) })
+        card.addView(UiKit.divider(activity, 16, 16))
+        card.addView(UiKit.paragraph(
+            activity,
+            "侧边栏（左滑抽屉菜单）末尾会有「精简侧边栏 / 恢复全部菜单」按钮，" +
+                "点击即可快速切换；这里勾选精简模式下要隐藏的菜单项。" +
+                "宿主会动态重建菜单，如个别条目未被隐藏，重启 Pixiv 后完全生效。"
+        ))
+        body.addView(card)
+
+        val itemsCard = UiKit.card(activity)
+        itemsCard.addView(UiKit.cardSectionTitle(activity, "精简模式下隐藏"))
+        var added = false
+        for ((entryName, label) in com.heihun.pixivplus.feature.drawer.DrawerSlimFeature.DRAWER_ITEM_LABELS) {
+            if (added) itemsCard.addView(UiKit.divider(activity, 12, 12))
+            added = true
+            itemsCard.addView(UiKit.switchRow(
+                activity,
+                label,
+                "精简模式下隐藏该项",
+                drawerSlimItemHidden(entryName)
+            ) { checked ->
+                setDrawerSlimItemHidden(entryName, checked)
+            })
+        }
+        body.addView(itemsCard)
+        body.addView(UiKit.paragraph(
+            activity,
+            "「分组标题」也按普通项处理；隐藏某个分组的全部成员后，标题可以单独保留或隐藏。"
+        ))
+    }
+
+    private fun drawerSlimItemHidden(entryName: String): Boolean {
+        return ConfigStoreRegistry.store
+            .get(ConfigKeys.DRAWER_SLIM_ITEMS)
+            .split(",")
+            .map { it.trim() }
+            .contains(entryName)
+    }
+
+    private fun setDrawerSlimItemHidden(entryName: String, hidden: Boolean) {
+        val current = ConfigStoreRegistry.store
+            .get(ConfigKeys.DRAWER_SLIM_ITEMS)
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toMutableList()
+        if (hidden) {
+            if (!current.contains(entryName)) current.add(entryName)
+        } else {
+            current.remove(entryName)
+        }
+        ConfigStoreRegistry.store.put(ConfigKeys.DRAWER_SLIM_ITEMS, current.joinToString(","))
+    }
+
+    private fun drawerSlimSummary(): String {
+        val enabled = ConfigStoreRegistry.store.get(ConfigKeys.DRAWER_SLIM_ENABLED)
+        val hiddenCount = ConfigStoreRegistry.store
+            .get(ConfigKeys.DRAWER_SLIM_ITEMS)
+            .split(",")
+            .count { it.trim().isNotEmpty() }
+        return if (enabled) "精简模式开启 · 隐藏 $hiddenCount 项" else "精简模式关闭 · 已选 $hiddenCount 项"
     }
 
     private fun buildNovelSavePage(activity: Activity, body: LinearLayout) {

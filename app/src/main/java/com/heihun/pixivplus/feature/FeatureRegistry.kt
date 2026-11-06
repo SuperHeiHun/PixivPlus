@@ -24,6 +24,7 @@ object FeatureRegistry {
         features.add(com.heihun.pixivplus.feature.proxy.AppProxyFeature())
         features.add(com.heihun.pixivplus.feature.novelsave.NovelSaveFeature())
         features.add(com.heihun.pixivplus.feature.translate.TranslationFeature())
+        features.add(com.heihun.pixivplus.feature.drawer.DrawerSlimFeature())
 
         for (feature in features) {
             try {
@@ -53,6 +54,8 @@ object FeatureRegistry {
         watchedKeys.add(ConfigKeys.NOVEL_SAVE_ENABLED)
         watchedKeys.add(ConfigKeys.TRANSLATE_ENABLED)
         watchedKeys.add(ConfigKeys.TRANSLATE_TARGET)
+        watchedKeys.add(ConfigKeys.DRAWER_SLIM_ENABLED)
+        watchedKeys.add(ConfigKeys.DRAWER_SLIM_ITEMS)
 
         for (key in watchedKeys) {
             config.addListener(key) { value ->
