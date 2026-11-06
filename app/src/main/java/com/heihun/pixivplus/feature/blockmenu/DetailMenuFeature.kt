@@ -17,6 +17,7 @@ import com.heihun.pixivplus.core.util.EntityReader
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.ConfigurableFeature
+import com.heihun.pixivplus.ui.panel.ConfirmDialog
 import com.heihun.pixivplus.ui.panel.TagSelectDialog
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -454,26 +455,31 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
         val activity = currentActivity ?: return
         val snapshot = resolveSnapshot()
         val authorId = snapshot?.authorId?.takeIf { it > 0L }
-        if (authorId != null) {
-            val current = ConfigStoreRegistry.store.get(ConfigKeys.FILTER_AUTHORS)
-            ConfigStoreRegistry.store.put(
-                ConfigKeys.FILTER_AUTHORS,
-                RuleAppender.append(current, listOf(authorId.toString()))
-            )
-            toast(activity, "已屏蔽作者 UID：$authorId")
-            ModuleLog.i(displayName, "block-by-author appended uid=$authorId")
-            return
-        }
-        // 实体缺失时退回名称 / 账号（旧规则仍按名称匹配）。
-        val author = snapshot?.authorName?.takeIf { it.isNotEmpty() }
+        val fallbackName = snapshot?.authorName?.takeIf { it.isNotEmpty() }
             ?: snapshot?.authorAccount?.takeIf { it.isNotEmpty() }
-        if (author.isNullOrEmpty()) {
+        if (authorId == null && fallbackName.isNullOrEmpty()) {
             toast(activity, "未获取到当前作者")
             return
         }
-        val current = ConfigStoreRegistry.store.get(ConfigKeys.FILTER_AUTHORS)
-        ConfigStoreRegistry.store.put(ConfigKeys.FILTER_AUTHORS, RuleAppender.append(current, listOf(author)))
-        toast(activity, "已屏蔽作者：$author")
+        // 优先 UID 精确规则；实体缺失时退回名称 / 账号（旧规则仍按名称匹配）。
+        val rule = authorId?.toString() ?: fallbackName!!
+        if (ruleExists(ConfigStoreRegistry.store.get(ConfigKeys.FILTER_AUTHORS), rule)) {
+            toast(activity, "该作者已在屏蔽规则中")
+            return
+        }
+        val message = if (authorId != null) {
+            "将按 UID $authorId 精确屏蔽作者「${fallbackName ?: "未知"}」，" +
+                "其作品不再出现在首页推荐、搜索等列表中。\n可在 设置 → 过滤规则 中撤销。"
+        } else {
+            "将按名称屏蔽作者「$fallbackName」，其作品不再出现在首页推荐、搜索等列表中。\n" +
+                "可在 设置 → 过滤规则 中撤销。"
+        }
+        ConfirmDialog.show(activity, "屏蔽当前作者", message, "屏蔽") {
+            val current = ConfigStoreRegistry.store.get(ConfigKeys.FILTER_AUTHORS)
+            ConfigStoreRegistry.store.put(ConfigKeys.FILTER_AUTHORS, RuleAppender.append(current, listOf(rule)))
+            toast(activity, if (authorId != null) "已屏蔽作者 UID：$authorId" else "已屏蔽作者：$fallbackName")
+            ModuleLog.i(displayName, "block-by-author appended rule=$rule")
+        }
     }
 
     private fun blockTitle() {
@@ -484,8 +490,29 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
             return
         }
         val current = ConfigStoreRegistry.store.get(ConfigKeys.FILTER_KEYWORDS)
-        ConfigStoreRegistry.store.put(ConfigKeys.FILTER_KEYWORDS, RuleAppender.append(current, listOf(title)))
-        toast(activity, "已屏蔽标题：$title")
+        if (ruleExists(current, title)) {
+            toast(activity, "该标题已在屏蔽规则中")
+            return
+        }
+        ConfirmDialog.show(
+            activity,
+            "屏蔽当前标题",
+            "将把标题「$title」加入关键词屏蔽规则，标题含该关键词的作品都会被隐藏。\n可在 设置 → 过滤规则 中撤销。",
+            "屏蔽"
+        ) {
+            ConfigStoreRegistry.store.put(ConfigKeys.FILTER_KEYWORDS, RuleAppender.append(current, listOf(title)))
+            toast(activity, "已屏蔽标题：$title")
+            ModuleLog.i(displayName, "block-by-title appended title=$title")
+        }
+    }
+
+    /** 规则是否已存在（逐行比对，忽略两侧引号，避免 RuleAppender 产生重复行）。 */
+    private fun ruleExists(current: String?, rule: String): Boolean {
+        val target = rule.trim()
+        return current.orEmpty()
+            .lines()
+            .map { it.trim().removeSurrounding("\"") }
+            .contains(target)
     }
 
     private fun toast(activity: Activity, message: String) {
