@@ -108,7 +108,15 @@ object ChoiceDialog {
                 addView(list)
             }
             root.addView(scroll)
-            root.addView(View(activity).apply { minimumHeight = UiKit.dp(activity, 8) })
+            // 普通 View 的 WRAP_CONTENT 默认测量会占满 AT_MOST 的剩余高度，
+            // minimumHeight 不是固定高度；底部留白必须明确指定 8dp。
+            root.addView(
+                View(activity),
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    UiKit.dp(activity, 8)
+                )
+            )
 
             dialog.setContentView(root)
             dialog.show()
