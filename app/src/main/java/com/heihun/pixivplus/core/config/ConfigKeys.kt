@@ -74,12 +74,25 @@ object ConfigKeys {
         { it }
     )
 
+    /** 备份内容范围：设置项（除屏蔽规则外的配置）。 */
+    val BACKUP_INCLUDE_SETTINGS = ConfigKey("backup_include_settings", true, { it.toString() }, { it.toBoolean() })
+
+    /** 备份内容范围：屏蔽规则（关键词 / 标签 / 作者）。 */
+    val BACKUP_INCLUDE_FILTERS = ConfigKey("backup_include_filters", true, { it.toString() }, { it.toBoolean() })
+
+    /** 备份内容范围：浏览历史与作者资料。 */
+    val BACKUP_INCLUDE_HISTORY = ConfigKey("backup_include_history", true, { it.toString() }, { it.toBoolean() })
+
+    /** 备份文件加密密码；留空表示不加密。仅保留在本机，不写入备份。 */
+    val BACKUP_PASSWORD = ConfigKey("backup_password", "", { it }, { it })
+
     /** 不写入备份文件的敏感 / 设备相关配置；恢复时保留本机现有值。 */
     val LOCAL_ONLY_NAMES = setOf(
         PROXY_PASSWORD.name,
         WEBDAV_PASSWORD.name,
         BACKUP_FOLDER_URI.name,
-        NOVEL_SAVE_FOLDER_URI.name
+        NOVEL_SAVE_FOLDER_URI.name,
+        BACKUP_PASSWORD.name
     )
 
     val FILTER_KEYWORDS = ConfigKey("filter_keywords", "", { it }, { it })

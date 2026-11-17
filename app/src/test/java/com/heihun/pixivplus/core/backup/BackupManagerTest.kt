@@ -89,4 +89,42 @@ class BackupManagerTest {
             ).ok
         )
     }
+
+    @Test
+    fun `encrypt decrypt roundtrip with password`() {
+        val plain = BackupManager.createJson()
+        val envelope = BackupManager.encrypt(plain, "secret-密码123".toCharArray())
+        assertTrue(BackupManager.isEncryptedJson(envelope))
+        assertFalse(BackupManager.isEncryptedJson(plain))
+
+        val decrypted = BackupManager.decrypt(envelope, "secret-密码123".toCharArray())
+        assertEquals(plain, decrypted)
+
+        val info = BackupManager.info(decrypted)
+        assertEquals(BackupManager.FORMAT, org.json.JSONObject(decrypted).getString("format"))
+        assertEquals(0, info?.configCount)
+    }
+
+    @Test
+    fun `decrypt with wrong password fails`() {
+        val envelope = BackupManager.encrypt("{\"format\":\"pixivplus-backup\"}", "right".toCharArray())
+        var failed = false
+        try {
+            BackupManager.decrypt(envelope, "wrong".toCharArray())
+        } catch (_: Throwable) {
+            failed = true
+        }
+        assertTrue(failed)
+        assertFalse(BackupManager.isEncryptedJson("{\"format\":\"pixivplus-backup\"}"))
+    }
+
+    @Test
+    fun `encrypt uses random salt so envelopes differ`() {
+        val json = "{\"a\":1}"
+        val first = BackupManager.encrypt(json, "pwd".toCharArray())
+        val second = BackupManager.encrypt(json, "pwd".toCharArray())
+        assertTrue(first != second)
+        assertEquals(json, BackupManager.decrypt(first, "pwd".toCharArray()))
+        assertEquals(json, BackupManager.decrypt(second, "pwd".toCharArray()))
+    }
 }

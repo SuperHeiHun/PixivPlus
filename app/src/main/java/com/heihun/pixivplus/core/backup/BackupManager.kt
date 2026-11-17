@@ -17,6 +17,13 @@ import java.text.SimpleDateFormat
 import java.util.Base64
 import java.util.Date
 import java.util.Locale
+import java.security.SecureRandom
+import javax.crypto.Cipher
+import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
 
 /**
  * 模块数据备份：配置 + 历史记录 + 作者资料。
@@ -29,10 +36,22 @@ object BackupManager {
     private const val TAG = "Backup"
     const val FORMAT = "pixivplus-backup"
     const val VERSION = 1
+    const val ENCRYPTED_FORMAT = "pixivplus-encrypted-backup"
+    const val ENCRYPT_VERSION = 1
     const val FILE_PREFIX = "pixiv-backup-"
     const val FILE_SUFFIX = ".json"
     private const val FILE_TIME_PATTERN = "yy-MM-dd_HH-mm"
     private const val MIME_JSON = "application/json"
+    private const val KDF_ITERATIONS = 120_000
+    private const val KEY_BITS = 256
+
+    /** 屏蔽规则相关的配置键（受「屏蔽规则」备份范围控制）。 */
+    private val FILTER_CONFIG_KEYS = setOf(
+        ConfigKeys.FILTER_KEYWORDS.name,
+        ConfigKeys.FILTER_TAGS.name,
+        ConfigKeys.FILTER_AUTHORS.name,
+        ConfigKeys.FILTER_CASE_SENSITIVE.name
+    )
 
     data class BackupInfo(
         val createdAt: Long,
@@ -62,6 +81,67 @@ object BackupManager {
             name.endsWith(FILE_SUFFIX, ignoreCase = true)
     }
 
+    // ------------------------------------------------------------------
+    // 备份内容（范围 + 加密）
+    // ------------------------------------------------------------------
+
+    /** 生成本次备份内容：明文 JSON；设置了备份密码时返回加密信封（创建 / 上传共用）。 */
+    fun createPayload(): String {
+        val password = Runtime.configOrNull()?.get(ConfigKeys.BACKUP_PASSWORD).orEmpty()
+        val json = createJson()
+        if (password.isBlank()) return json
+        return encrypt(json, password.toCharArray())
+    }
+
+    /** 判断备份内容是否为加密信封。 */
+    fun isEncryptedJson(json: String): Boolean {
+        return try {
+            val trimmed = json.trimStart()
+            trimmed.startsWith("{") && JSONObject(trimmed).optString("format") == ENCRYPTED_FORMAT
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** 加密：随机 salt/iv，AES-256-GCM，密钥由 PBKDF2WithHmacSHA256 派生；输出信封 JSON。 */
+    fun encrypt(json: String, password: CharArray): String {
+        val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, deriveKey(password, salt))
+        val iv = cipher.iv
+        val data = cipher.doFinal(json.toByteArray(Charsets.UTF_8))
+        val envelope = JSONObject()
+        envelope.put("format", ENCRYPTED_FORMAT)
+        envelope.put("version", ENCRYPT_VERSION)
+        envelope.put("kdf", "pbkdf2-sha256")
+        envelope.put("iterations", KDF_ITERATIONS)
+        envelope.put("salt", Base64.getEncoder().encodeToString(salt))
+        envelope.put("iv", Base64.getEncoder().encodeToString(iv))
+        envelope.put("data", Base64.getEncoder().encodeToString(data))
+        return envelope.toString()
+    }
+
+    /** 解密加密信封；密码错误（GCM 校验失败）或内容损坏时抛异常。 */
+    fun decrypt(envelopeJson: String, password: CharArray): String {
+        val root = JSONObject(envelopeJson)
+        if (root.optString("format") != ENCRYPTED_FORMAT) {
+            throw IllegalArgumentException("not an encrypted backup")
+        }
+        val iterations = root.optInt("iterations", KDF_ITERATIONS).coerceIn(10000, 500000)
+        val salt = Base64.getDecoder().decode(root.optString("salt"))
+        val iv = Base64.getDecoder().decode(root.optString("iv"))
+        val data = Base64.getDecoder().decode(root.optString("data"))
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, deriveKey(password, salt, iterations), GCMParameterSpec(128, iv))
+        return String(cipher.doFinal(data), Charsets.UTF_8)
+    }
+
+    private fun deriveKey(password: CharArray, salt: ByteArray, iterations: Int = KDF_ITERATIONS): SecretKey {
+        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val spec = PBEKeySpec(password, salt, iterations, KEY_BITS)
+        return SecretKeySpec(factory.generateSecret(spec).encoded, "AES")
+    }
+
     fun createJson(): String {
         val root = JSONObject()
         root.put("format", FORMAT)
@@ -70,18 +150,29 @@ object BackupManager {
         root.put("module_version", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         root.put("database_version", LocalDatabase.DATABASE_VERSION)
 
-        val config = JSONObject()
-        Runtime.configOrNull()?.snapshotStrings()?.forEach { (name, value) ->
-            if (name !in ConfigKeys.LOCAL_ONLY_NAMES) {
-                config.put(name, value)
+        // 备份内容范围：设置项 / 屏蔽规则 / 历史记录三类可分别排除；未包含的部分恢复时保留本机现状。
+        val config = Runtime.configOrNull()
+        val includeSettings = config?.get(ConfigKeys.BACKUP_INCLUDE_SETTINGS) ?: true
+        val includeFilters = config?.get(ConfigKeys.BACKUP_INCLUDE_FILTERS) ?: true
+        val includeHistory = config?.get(ConfigKeys.BACKUP_INCLUDE_HISTORY) ?: true
+
+        val configJson = JSONObject()
+        config?.snapshotStrings()?.forEach { (name, value) ->
+            if (name in ConfigKeys.LOCAL_ONLY_NAMES) return@forEach
+            if (name in FILTER_CONFIG_KEYS) {
+                if (includeFilters) configJson.put(name, value)
+            } else if (includeSettings) {
+                configJson.put(name, value)
             }
         }
-        root.put("config", config)
+        root.put("config", configJson)
 
         val database = Runtime.databaseOrNull()
-        dumpTable(database, LocalDatabase.HISTORY_TABLE)?.let { root.put("history", it) }
-        dumpTable(database, LocalDatabase.AUTHOR_PROFILE_TABLE)?.let {
-            root.put("author_profile", it)
+        if (includeHistory) {
+            dumpTable(database, LocalDatabase.HISTORY_TABLE)?.let { root.put("history", it) }
+            dumpTable(database, LocalDatabase.AUTHOR_PROFILE_TABLE)?.let {
+                root.put("author_profile", it)
+            }
         }
         return root.toString()
     }
@@ -138,7 +229,7 @@ object BackupManager {
                 DocumentsContract.createDocument(resolver, parentUri, MIME_JSON, name)
             } ?: return null
 
-            val data = createJson().toByteArray(Charsets.UTF_8)
+            val data = createPayload().toByteArray(Charsets.UTF_8)
             resolver.openOutputStream(documentUri, "wt")?.use { output ->
                 output.write(data)
                 output.flush()

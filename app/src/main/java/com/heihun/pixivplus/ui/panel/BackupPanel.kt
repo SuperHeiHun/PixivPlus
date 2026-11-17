@@ -25,6 +25,54 @@ object BackupPanel {
 
     fun build(activity: Activity, card: LinearLayout) {
         card.removeAllViews()
+        card.addView(UiKit.cardSectionTitle(activity, "备份内容"))
+        card.addView(
+            UiKit.switchRow(
+                activity,
+                "包含设置项",
+                "除屏蔽规则外的模块配置",
+                configValue(ConfigKeys.BACKUP_INCLUDE_SETTINGS)
+            ) { checked -> putConfig(ConfigKeys.BACKUP_INCLUDE_SETTINGS, checked) }
+        )
+        card.addView(
+            UiKit.switchRow(
+                activity,
+                "包含屏蔽规则",
+                "关键词、标签与作者规则",
+                configValue(ConfigKeys.BACKUP_INCLUDE_FILTERS)
+            ) { checked -> putConfig(ConfigKeys.BACKUP_INCLUDE_FILTERS, checked) }
+        )
+        card.addView(
+            UiKit.switchRow(
+                activity,
+                "包含历史记录",
+                "浏览历史与作者资料",
+                configValue(ConfigKeys.BACKUP_INCLUDE_HISTORY)
+            ) { checked -> putConfig(ConfigKeys.BACKUP_INCLUDE_HISTORY, checked) }
+        )
+        card.addView(UiKit.paragraph(
+            activity,
+            "未勾选的内容不写入备份文件；恢复时这部分数据保留本机现有值。"
+        ))
+
+        card.addView(UiKit.divider(activity, 16, 16))
+        card.addView(UiKit.cardSectionTitle(activity, "安全"))
+        card.addView(
+            UiKit.inputRow(
+                activity,
+                "备份密码（可选）",
+                configText(ConfigKeys.BACKUP_PASSWORD),
+                "留空则明文保存",
+                password = true
+            ) { value -> putConfig(ConfigKeys.BACKUP_PASSWORD, value.trim()) }
+        )
+        card.addView(UiKit.paragraph(
+            activity,
+            "设置密码后备份会以 AES-256-GCM 加密（密码派生密钥，随机盐与 IV）。" +
+                "密码仅保存在本机、不写入备份；忘记密码将无法恢复加密备份。"
+        ))
+
+        card.addView(UiKit.divider(activity, 16, 16))
         card.addView(UiKit.cardSectionTitle(activity, "本地文件"))
         card.addView(
             UiKit.selectRow(
@@ -135,8 +183,8 @@ object BackupPanel {
         card.addView(
             UiKit.paragraph(
                 activity,
-                "备份不包含代理密码、WebDAV 密码和本地备份文件夹；恢复会覆盖当前配置、" +
-                    "历史记录与作者资料，以上三项保留本机现有值。"
+                "备份不包含代理密码、WebDAV 密码、备份密码和本地备份文件夹；" +
+                    "未勾选的备份内容恢复时保留本机现有值。"
             )
         )
     }
@@ -196,14 +244,11 @@ object BackupPanel {
                         val file = files.getOrNull(index) ?: return@show
                         Thread({
                             val json = BackupManager.readLocal(activity, file.uri)
-                            val info = json?.let { BackupManager.info(it) }
                             runOnUi(activity) {
-                                if (json == null || info == null) {
+                                if (json == null) {
                                     toast(activity, "无法读取该备份文件")
                                 } else {
-                                    confirmRestore(activity, "本地备份 ${file.name}", info) {
-                                        restoreAsync(activity, json)
-                                    }
+                                    handleRestorePayload(activity, "本地备份 ${file.name}", json)
                                 }
                             }
                         }, "plp-backup-read").apply { isDaemon = true }.start()
@@ -225,7 +270,13 @@ object BackupPanel {
         toast(activity, "正在上传备份…")
         Thread({
             val name = BackupManager.fileName()
-            val data = BackupManager.createJson().toByteArray(Charsets.UTF_8)
+            val data = try {
+                BackupManager.createPayload().toByteArray(Charsets.UTF_8)
+            } catch (t: Throwable) {
+                ModuleLog.e(TAG, "create encrypted payload failed", t)
+                runOnUi(activity) { toast(activity, "生成备份内容失败：加密出错，详情见日志") }
+                return@Thread
+            }
             val result = WebDavBackup.upload(
                 store = store,
                 host = endpoint.host,
@@ -274,15 +325,61 @@ object BackupPanel {
             }
             val info = BackupManager.info(body)
             runOnUi(activity) {
-                if (info == null) {
+                if (info == null && !BackupManager.isEncryptedJson(body)) {
                     toast(activity, "WebDAV 文件不是有效的 PixivPlus 备份")
                 } else {
-                    confirmRestore(activity, "WebDAV 备份 ${remote.name}", info) {
-                        restoreAsync(activity, body)
-                    }
+                    handleRestorePayload(activity, "WebDAV 备份 ${remote.name}", body)
                 }
             }
         }, "plp-backup-webdav-down").apply { isDaemon = true }.start()
+    }
+
+    /**
+     * 备份内容统一入口：明文直接进确认；加密信封先解密
+     * （优先尝试本机保存的备份密码，失败或未设置时弹密码输入）。
+     */
+    private fun handleRestorePayload(activity: Activity, source: String, json: String) {
+        if (!BackupManager.isEncryptedJson(json)) {
+            val info = BackupManager.info(json)
+            if (info == null) {
+                toast(activity, "无法读取该备份文件")
+                return
+            }
+            confirmRestore(activity, source, info) {
+                restoreAsync(activity, json)
+            }
+            return
+        }
+        val stored = configText(ConfigKeys.BACKUP_PASSWORD)
+        if (stored.isNotEmpty()) {
+            attemptDecrypt(activity, source, json, stored)
+            return
+        }
+        PasswordPromptDialog.show(activity, "该备份已加密，请输入密码") { pwd ->
+            attemptDecrypt(activity, source, json, pwd)
+        }
+    }
+
+    private fun attemptDecrypt(activity: Activity, source: String, json: String, password: String) {
+        toast(activity, "正在解密备份…")
+        Thread({
+            val plain = try {
+                BackupManager.decrypt(json, password.toCharArray())
+            } catch (t: Throwable) {
+                ModuleLog.w(TAG, "decrypt backup failed: ${t.javaClass.simpleName}")
+                null
+            }
+            runOnUi(activity) {
+                if (plain == null) {
+                    toast(activity, "解密失败：密码错误或文件已损坏")
+                    PasswordPromptDialog.show(activity, "该备份已加密，请输入密码") { pwd ->
+                        attemptDecrypt(activity, source, json, pwd)
+                    }
+                } else {
+                    handleRestorePayload(activity, source, plain)
+                }
+            }
+        }, "plp-backup-decrypt").apply { isDaemon = true }.start()
     }
 
     private fun confirmRestore(
@@ -302,8 +399,8 @@ object BackupPanel {
             append("内容：配置 ").append(info.configCount).append(" 项、历史 ")
             append(info.historyCount).append(" 条、作者资料 ")
             append(info.authorCount).append(" 条\n\n")
-            append("恢复会覆盖当前配置、历史记录与作者资料；代理密码、WebDAV 密码")
-            append("和本地备份文件夹保留本机现有值。")
+            append("恢复会覆盖备份中包含的内容；备份未包含的部分与代理密码、WebDAV 密码、")
+            append("本地备份文件夹保留本机现有值。")
         }
         ConfirmDialog.show(activity, "恢复备份", message, "恢复", danger = true) {
             onConfirm()
