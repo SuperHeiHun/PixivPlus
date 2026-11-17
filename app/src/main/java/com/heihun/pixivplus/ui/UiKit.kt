@@ -99,6 +99,8 @@ object UiKit {
         title: String,
         subtitle: String?,
         checked: Boolean,
+        actionLabel: String? = null,
+        onAction: ((TextView) -> Unit)? = null,
         onChanged: (Boolean) -> Unit
     ): View {
         val palette = colors(context)
@@ -120,6 +122,13 @@ object UiKit {
         if (!subtitle.isNullOrEmpty()) {
             texts.addView(bodyText(context, subtitle, 13f, palette.onSurfaceVariant).apply {
                 setPadding(0, dp(context, 2), 0, 0)
+            })
+        }
+        if (actionLabel != null && onAction != null) {
+            texts.addView(textButton(context, actionLabel).apply {
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                setPadding(dp(context, 8), dp(context, 4), dp(context, 8), dp(context, 4))
+                setOnClickListener { onAction(this) }
             })
         }
         row.addView(texts)

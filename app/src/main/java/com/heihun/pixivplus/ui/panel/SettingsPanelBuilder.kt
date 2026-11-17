@@ -287,7 +287,21 @@ object SettingsPanelBuilder {
             activity,
             "简介与小说翻译",
             "详情页菜单翻译简介，小说页菜单整篇翻译正文",
-            configValue(ConfigKeys.TRANSLATE_ENABLED)
+            configValue(ConfigKeys.TRANSLATE_ENABLED),
+            actionLabel = "目标语言：${translateTargetLabel()} ›",
+            onAction = { entry ->
+                val targets = com.heihun.pixivplus.core.translate.Translator.TARGETS
+                val selected = targets.indexOfFirst { it.code == configText(ConfigKeys.TRANSLATE_TARGET) }
+                ChoiceDialog.show(
+                    activity,
+                    "翻译目标语言",
+                    targets.map { it.label },
+                    if (selected >= 0) selected else 0
+                ) { index ->
+                    putConfig(ConfigKeys.TRANSLATE_TARGET, targets[index].code)
+                    entry.text = "目标语言：${targets[index].label} ›"
+                }
+            }
         ) { checked -> putConfig(ConfigKeys.TRANSLATE_ENABLED, checked) })
         addRow(card, UiKit.switchRow(
             activity,
@@ -295,27 +309,6 @@ object SettingsPanelBuilder {
             "在主抽屉菜单末尾提供一键隐藏低频菜单项的按钮",
             configValue(ConfigKeys.DRAWER_SLIM_ENABLED)
         ) { checked -> putConfig(ConfigKeys.DRAWER_SLIM_ENABLED, checked) })
-        val translateTargets = com.heihun.pixivplus.core.translate.Translator.TARGETS
-        var targetLabelView: TextView? = null
-        val targetRow = UiKit.selectRow(
-            activity,
-            "翻译目标语言",
-            translateTargetLabel()
-        ) {
-            val current = translateTargets.indexOfFirst { it.code == configText(ConfigKeys.TRANSLATE_TARGET) }
-            ChoiceDialog.show(
-                activity,
-                "翻译目标语言",
-                translateTargets.map { it.label },
-                if (current >= 0) current else 0
-            ) { index ->
-                putConfig(ConfigKeys.TRANSLATE_TARGET, translateTargets[index].code)
-                targetLabelView?.text = translateTargets[index].label
-            }
-        }
-        targetLabelView =
-            ((targetRow as? LinearLayout)?.getChildAt(0) as? LinearLayout)?.getChildAt(1) as? TextView
-        addRow(card, targetRow)
         card.addView(UiKit.divider(activity, 16, 16))
         card.addView(UiKit.paragraph(
             activity,
