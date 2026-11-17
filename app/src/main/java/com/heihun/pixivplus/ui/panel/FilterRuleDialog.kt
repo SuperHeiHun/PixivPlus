@@ -58,7 +58,16 @@ object FilterRuleDialog {
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
             )
-            root.addView(content)
+            // 规则很多时限高滚动，避免弹窗被撑满整屏。
+            root.addView(
+                UiKit.maxHeightScroll(activity, 360).apply {
+                    addView(content)
+                },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
 
             root.addView(UiKit.divider(activity))
             val footer = LinearLayout(activity).apply {

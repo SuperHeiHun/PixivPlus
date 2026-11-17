@@ -84,7 +84,7 @@ object DiagnosticsPanel {
     }
 
     /** BUILD_FINGERPRINT（构建时间戳）格式化为可读时间，用于确认设备上实际安装的构建。 */
-    private fun moduleBuildLabel(): String {
+    fun moduleBuildLabel(): String {
         return try {
             val raw = com.heihun.pixivplus.BuildConfig.BUILD_FINGERPRINT
             val ts = raw.toLongOrNull() ?: return raw

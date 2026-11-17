@@ -321,11 +321,9 @@ class TranslationFeature : ConfigurableFeature(
             )
         )
         dialog.setContentView(surface)
-        dialog.window?.apply {
-            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setGravity(android.view.Gravity.CENTER)
-        }
         dialog.show()
+        // 宽度与其他弹窗一致（不再是全屏宽），高度由 fitCaptionDialog 按内容收敛。
+        UiKit.applyDialogWidth(dialog, 0.92f, 520)
         UiKit.animateDialogIn(surface)
         return CaptionDialogHolder(dialog, scroll, body)
     }
@@ -334,8 +332,10 @@ class TranslationFeature : ConfigurableFeature(
     private fun fitCaptionDialog(activity: Activity, holder: CaptionDialogHolder) {
         holder.body.post {
             try {
-                // 必须按最终布局宽度（屏宽 - 水平内边距）测量，否则长译文不换行导致高度被低估。
-                val contentWidth = activity.resources.displayMetrics.widthPixels -
+                // 必须按最终布局宽度测量，否则长译文不换行导致高度被低估；
+                // 弹窗宽度收敛后以 ScrollView 实际宽度为准，未布局完成时退回屏幕宽度。
+                val laidOut = holder.scroll.width.takeIf { it > 0 }
+                val contentWidth = (laidOut ?: activity.resources.displayMetrics.widthPixels) -
                     holder.body.paddingLeft - holder.body.paddingRight
                 val widthSpec = View.MeasureSpec.makeMeasureSpec(contentWidth, View.MeasureSpec.AT_MOST)
                 val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)

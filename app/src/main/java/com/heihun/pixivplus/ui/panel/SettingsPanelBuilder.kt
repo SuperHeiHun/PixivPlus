@@ -72,7 +72,11 @@ object SettingsPanelBuilder {
             // 不再先跳模块主页；普通入口保持「返回 → 回主页」的既有行为。
             val deepLinked = initialScreen != Screen.MAIN
             var current = Screen.MAIN
+            // 记住各页滚动位置：从二级页返回主页时恢复，不再跳回顶部。
+            val scrollPositions = HashMap<Screen, Int>()
+            var activeScroll: ScrollView? = null
             fun showScreen(screen: Screen, fromBack: Boolean = false) {
+                activeScroll?.let { view -> scrollPositions[current] = view.scrollY }
                 val goingBack = fromBack || (current != Screen.MAIN && screen == Screen.MAIN)
                 current = screen
                 renderScreen(
@@ -82,7 +86,9 @@ object SettingsPanelBuilder {
                     screen,
                     goingBack,
                     { showScreen(it) },
-                    { showScreen(Screen.MAIN, fromBack = true) }
+                    { showScreen(Screen.MAIN, fromBack = true) },
+                    scrollPositions[screen] ?: 0,
+                    { activeScroll = it }
                 )
             }
 
@@ -100,6 +106,7 @@ object SettingsPanelBuilder {
                     false
                 }
             }
+            dialog.setOnDismissListener { scrollPositions.clear() }
             showScreen(initialScreen)
             ModuleLog.i(TAG, "panel shown (initial=${initialScreen.name})")
         } catch (t: Throwable) {
@@ -114,7 +121,9 @@ object SettingsPanelBuilder {
         screen: Screen,
         goingBack: Boolean,
         open: (Screen) -> Unit,
-        back: () -> Unit
+        back: () -> Unit,
+        restoreScrollY: Int,
+        onScrollCreated: (ScrollView) -> Unit
     ) {
         container.removeAllViews()
         val header = if (screen == Screen.MAIN) {
@@ -139,6 +148,11 @@ object SettingsPanelBuilder {
         }
         scroll.addView(body)
         container.addView(scroll)
+        onScrollCreated(scroll)
+        if (restoreScrollY > 0) {
+            // 布局完成后再恢复滚动位置，否则会被重置。
+            scroll.post { scroll.scrollTo(0, restoreScrollY) }
+        }
 
         // 页面切换动画：进入二级页从右滑入，返回主页从左滑入。
         UiKit.fadeIn(header)
@@ -479,6 +493,8 @@ object SettingsPanelBuilder {
                 "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
             )
         )
+        card.addView(UiKit.divider(activity, 16, 16))
+        card.addView(UiKit.infoRow(activity, "构建时间", DiagnosticsPanel.moduleBuildLabel()))
         card.addView(UiKit.divider(activity, 16, 16))
         card.addView(UiKit.infoRow(activity, "数据存储", "宿主应用私有目录，不上传任何数据"))
         card.addView(UiKit.divider(activity, 16, 16))

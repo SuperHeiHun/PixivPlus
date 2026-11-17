@@ -29,7 +29,14 @@ object ConfirmDialog {
 
             root.addView(UiKit.dialogHeader(activity, title, null) { UiKit.dismissAnimated(dialog, root) })
             root.addView(UiKit.divider(activity))
-            root.addView(TextView(activity).apply {
+            // 长文案（如备份恢复确认）限高滚动，避免弹窗被撑满整屏。
+            val messageScroll = UiKit.maxHeightScroll(activity, 320).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            }
+            messageScroll.addView(TextView(activity).apply {
                 text = message
                 textSize = 14f
                 setTextColor(palette.onSurfaceVariant)
@@ -42,6 +49,7 @@ object ConfirmDialog {
                     UiKit.dp(activity, 16)
                 )
             })
+            root.addView(messageScroll)
 
             root.addView(UiKit.divider(activity))
             val footer = LinearLayout(activity).apply {
