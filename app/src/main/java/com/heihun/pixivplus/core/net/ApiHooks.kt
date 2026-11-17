@@ -78,7 +78,8 @@ object ApiHooks {
                     val url = ReflectUtil.invoke(request, ReflectUtil.findMethod(request.javaClass, "url")) ?: return
                     val text = ReflectUtil.invoke(url, ReflectUtil.findMethod(url.javaClass, "toString")) as? String ?: return
                     if (!text.contains(SEARCH_PATH)) return
-                    ModuleLog.d("ApiHooks", "search request: $text")
+                    // 隐私：搜索词不出现在日志，只记路径。
+                    ModuleLog.d("ApiHooks", "search request: ${text.substringBefore('?')}")
                 }
 
                 override fun afterHookedMethod(param: MethodHookParam) {
@@ -92,7 +93,7 @@ object ApiHooks {
                         ReflectUtil.invoke(it, ReflectUtil.findMethod(it.javaClass, "toString")) as? String
                     } ?: return
                     if (!text.contains(SEARCH_PATH)) return
-                    ModuleLog.d("ApiHooks", "search response: code=$code url=$text")
+                    ModuleLog.d("ApiHooks", "search response: code=$code path=${text.substringBefore('?')}")
                 }
             })
         } catch (t: Throwable) {
@@ -131,18 +132,9 @@ object ApiHooks {
     private fun trace(counter: java.util.concurrent.atomic.AtomicInteger, kind: String, text: String) {
         val index = counter.incrementAndGet()
         if (index <= TRACE_LIMIT) {
-            ModuleLog.i("ApiHooks", "$kind #$index (${text.length} chars): ${text.take(160)}")
-            writeDebugBody(kind, index, text)
-        }
-    }
-
-    private fun writeDebugBody(kind: String, index: Int, text: String) {
-        try {
-            val context = Host.context() ?: return
-            val dir = java.io.File(context.cacheDir, "plp_bodies")
-            dir.mkdirs()
-            java.io.File(dir, "${kind}_$index.json").writeText(text)
-        } catch (_: Throwable) {
+            // 隐私：只记长度与序号，不输出响应内容片段（可能含作品标题、作者等用户数据），
+            // 也不再写 debug 响应体文件（1.0.4 及之前会落盘到 cacheDir/plp_bodies）。
+            ModuleLog.i("ApiHooks", "$kind #$index (${text.length} chars)")
         }
     }
 
