@@ -53,7 +53,7 @@ object SettingsPanelBuilder {
     /** initialScreen 可直达二级页（如屏蔽设定页入口直达「过滤规则」），返回键仍先回主页。 */
     fun show(activity: Activity, initialScreen: Screen = Screen.MAIN) {
         try {
-            val dialog = UiKit.dialog(activity)
+            val dialog = UiKit.dialog(activity, fullScreen = true)
             // 面板为全屏不透明表面，去掉遮罩：避免入场动画期间遮罩先于内容闪现 / 提前消失。
             dialog.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             val container = LinearLayout(activity).apply {

@@ -570,8 +570,13 @@ object UiKit {
         }
     }
 
-    fun dialog(activity: Activity): Dialog {
-        val theme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+    fun dialog(activity: Activity, fullScreen: Boolean = false): Dialog {
+        // 小弹窗必须使用浮动窗口主题，普通 Activity 主题会让 decor 保留整屏高度。
+        // 全屏设置面板明确选择原 Activity 主题，不受小弹窗修复影响。
+        val theme = if (!fullScreen) {
+            if (colors(activity).isDark) android.R.style.Theme_DeviceDefault_Dialog_NoActionBar
+            else android.R.style.Theme_DeviceDefault_Light_Dialog_NoActionBar
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             android.R.style.Theme_DeviceDefault_DayNight
         } else {
             android.R.style.Theme_DeviceDefault
@@ -636,6 +641,10 @@ object UiKit {
             orientation = LinearLayout.VERTICAL
             background = rounded(context, palette.surfaceContainerHigh, 28)
             clipToOutline = true
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
         }
     }
 
@@ -643,7 +652,25 @@ object UiKit {
         val context = dialog.context
         val metrics = context.resources.displayMetrics
         val width = minOf(dp(context, maxWidthDp), (metrics.widthPixels * fraction).toInt())
-        dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
+        // Window.setContentView(view) 默认以 MATCH_PARENT/MATCH_PARENT 添加根节点，
+        // 会覆盖 dialogSurface 上原有参数。必须在 setContentView/show 后改实际根节点，
+        // 否则即使窗口 WRAP_CONTENT，表面仍会被测量为整屏高（短列表下大片空白）。
+        val content = dialog.findViewById<ViewGroup>(android.R.id.content)
+        if (content != null) {
+            for (index in 0 until content.childCount) {
+                val child = content.getChildAt(index)
+                child.layoutParams = child.layoutParams.apply {
+                    this.width = ViewGroup.LayoutParams.MATCH_PARENT
+                    height = ViewGroup.LayoutParams.WRAP_CONTENT
+                }
+                child.minimumHeight = 0
+            }
+            content.minimumHeight = 0
+        }
+        dialog.window?.apply {
+            setGravity(Gravity.CENTER)
+            setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
     }
 
     fun styleFullScreenWindow(dialog: Dialog) {
@@ -720,7 +747,13 @@ private class MaxHeightScrollView(
 ) : ScrollView(context) {
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val spec = MeasureSpec.makeMeasureSpec(maxHeightPx, MeasureSpec.AT_MOST)
+        // 尊重标题、按钮、键盘占用后父布局给出的剩余空间，不能覆盖为固定上限。
+        val available = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) {
+            maxHeightPx
+        } else {
+            minOf(maxHeightPx, MeasureSpec.getSize(heightMeasureSpec))
+        }
+        val spec = MeasureSpec.makeMeasureSpec(available, MeasureSpec.AT_MOST)
         super.onMeasure(widthMeasureSpec, spec)
     }
 }
