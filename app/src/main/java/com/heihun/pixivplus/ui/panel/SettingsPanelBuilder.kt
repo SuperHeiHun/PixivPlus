@@ -52,7 +52,7 @@ object SettingsPanelBuilder {
         ABOUT("关于", "版本与使用提示")
     }
 
-    /** initialScreen 可直达二级页（如屏蔽设定页入口直达「过滤规则」），返回键仍先回主页。 */
+    /** 直达二级页时返回箭头和系统返回键均关闭面板，回到宿主打开位置。 */
     fun show(activity: Activity, initialScreen: Screen = Screen.MAIN) {
         try {
             val dialog = UiKit.dialog(activity, fullScreen = true)
@@ -88,7 +88,10 @@ object SettingsPanelBuilder {
                     screen,
                     goingBack,
                     { showScreen(it) },
-                    { showScreen(Screen.MAIN, fromBack = true) },
+                    {
+                        if (deepLinked) dialog.dismiss()
+                        else showScreen(Screen.MAIN, fromBack = true)
+                    },
                     scrollPositions[screen] ?: 0,
                     { activeScroll = it }
                 )
