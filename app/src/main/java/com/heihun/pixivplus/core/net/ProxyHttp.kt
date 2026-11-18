@@ -132,6 +132,12 @@ object ProxyHttp {
         }
     }
 
+    fun downloadFile(store: ConfigStore, url: URL, file: java.io.File, maxBytes: Long, progress: (Long, Long) -> Unit) {
+        val spec = effectiveSpec(store)
+        require(!spec.mode.requiresEndpoint() || spec.hasValidEndpoint()) { "代理地址或端口无效" }
+        TunnelHttpClient.downloadFile(spec, url, defaultHeaders(mapOf("Referer" to "https://www.pixiv.net/", "Accept-Encoding" to "identity")), file, maxBytes, progress)
+    }
+
     /**
      * 将「跟随系统」解析为具体的直连 / HTTP / SOCKS5 配置。
      *

@@ -166,7 +166,8 @@ internal object TunnelHttpClient {
         body: ByteArray?,
         maxBytes: Int,
         connectTimeoutMs: Int,
-        readTimeoutMs: Int
+        readTimeoutMs: Int,
+        responseReader: ((BufferedInputStream) -> RawResponse)? = null
     ): RawResponse {
         val isHttps = url.protocol.equals("https", true)
         val targetPort = when {
@@ -198,7 +199,7 @@ internal object TunnelHttpClient {
             }
             output.flush()
             val input = BufferedInputStream(stream.getInputStream())
-            return readResponse(input, maxBytes)
+            return responseReader?.invoke(input) ?: readResponse(input, maxBytes)
         } finally {
             com.heihun.pixivplus.core.task.TaskExecution.unregister(raw)
             try {
@@ -206,6 +207,32 @@ internal object TunnelHttpClient {
             } catch (_: Throwable) {
             }
         }
+    }
+
+    /** 流式写入模块断点文件，沿用所有代理、TLS 和任务取消能力。 */
+    fun downloadFile(spec: ProxySpec, url: URL, headers: Map<String, String>, file: java.io.File,
+                     maxBytes: Long, progress: (Long, Long) -> Unit) {
+        FileDownload.prepare(file, url.toString())
+        if (FileDownload.complete(file, url.toString())) return
+        var current = url
+        var redirects = 0
+        repeat(128) {
+            com.heihun.pixivplus.core.task.TaskExecution.check()
+            var result: FileDownload.Response? = null
+            val requestHeaders = headers + FileDownload.headers(file)
+            requestOnce(spec, "GET", current, requestHeaders, null, 1024, 8000, 60000) { input ->
+                result = FileDownload.read(input, file, url.toString(), maxBytes, progress)
+                RawResponse(result!!.code, ByteArray(0), result!!.location)
+            }
+            val response = result ?: throw IOException("下载响应缺失")
+            if (response.complete) return
+            if (response.code in 300..399) {
+                if (++redirects > MAX_REDIRECTS || response.location.isNullOrBlank()) throw IOException("下载重定向失败")
+                current = URL(current, response.location)
+                if (current.protocol != url.protocol) throw IOException("下载重定向协议变化")
+            }
+        }
+        throw IOException("下载分段次数过多，已保留断点")
     }
 
     private fun connectProxy(
