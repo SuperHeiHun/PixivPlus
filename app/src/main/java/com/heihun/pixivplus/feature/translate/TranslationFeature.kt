@@ -31,6 +31,7 @@ import com.heihun.pixivplus.core.translate.NovelText
 import com.heihun.pixivplus.core.translate.NovelTranslation
 import com.heihun.pixivplus.core.translate.Translator
 import com.heihun.pixivplus.core.util.EntityReader
+import com.heihun.pixivplus.core.util.FeatureMenuOrder
 import com.heihun.pixivplus.core.util.DetailPagerResolver
 import com.heihun.pixivplus.core.util.MenuHooks
 import com.heihun.pixivplus.core.util.ReflectUtil
@@ -134,16 +135,16 @@ class TranslationFeature : ConfigurableFeature(
                         val menu = MenuHooks.readMenu(toolbar) ?: continue
                         var changed = false
                         if (menu.findItem(ID_TRANSLATE_CAPTION) == null) {
-                            menu.add(Menu.NONE, ID_TRANSLATE_CAPTION, Menu.NONE, "翻译简介")
+                            menu.add(Menu.NONE, ID_TRANSLATE_CAPTION, FeatureMenuOrder.TRANSLATE_CAPTION, "翻译简介")
                             changed = true
                         }
                         if (novel) {
                             if (menu.findItem(ID_TRANSLATE_NOVEL) == null) {
-                                menu.add(Menu.NONE, ID_TRANSLATE_NOVEL, Menu.NONE, "翻译小说")
+                                menu.add(Menu.NONE, ID_TRANSLATE_NOVEL, FeatureMenuOrder.TRANSLATE_NOVEL, "翻译小说")
                                 changed = true
                             }
                             if (menu.findItem(ID_RESTORE_NOVEL) == null) {
-                                menu.add(Menu.NONE, ID_RESTORE_NOVEL, Menu.NONE, "显示原文")
+                                menu.add(Menu.NONE, ID_RESTORE_NOVEL, FeatureMenuOrder.RESTORE_NOVEL, "显示原文")
                                 changed = true
                             }
                         }

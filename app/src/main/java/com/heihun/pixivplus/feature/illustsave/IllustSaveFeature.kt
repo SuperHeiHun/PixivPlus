@@ -15,6 +15,7 @@ import com.heihun.pixivplus.core.media.OriginalImage
 import com.heihun.pixivplus.core.util.CurrentWorkHook
 import com.heihun.pixivplus.core.util.DetailPagerResolver
 import com.heihun.pixivplus.core.util.EntityReader
+import com.heihun.pixivplus.core.util.FeatureMenuOrder
 import com.heihun.pixivplus.core.util.MenuHooks
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.core.util.WorkPopupHooks
@@ -104,9 +105,9 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
                 for (toolbar in MenuHooks.findToolbars(activity.window.decorView)) {
                     val menu = MenuHooks.readMenu(toolbar) ?: continue
                     if (isEnabled(ConfigStoreRegistry.store)) {
-                        if (menu.findItem(SAVE_ORIGINAL) == null) menu.add(Menu.NONE, SAVE_ORIGINAL, Menu.NONE, "保存原图 / ZIP")
+                        if (menu.findItem(SAVE_ORIGINAL) == null) menu.add(Menu.NONE, SAVE_ORIGINAL, FeatureMenuOrder.SAVE_ORIGINAL, "保存原图 / ZIP")
                         if (entity != null && isUgoira(entity)) {
-                            if (menu.findItem(SAVE_GIF) == null) menu.add(Menu.NONE, SAVE_GIF, Menu.NONE, "保存 GIF")
+                            if (menu.findItem(SAVE_GIF) == null) menu.add(Menu.NONE, SAVE_GIF, FeatureMenuOrder.SAVE_GIF, "保存 GIF")
                         } else menu.removeItem(SAVE_GIF)
                     } else { menu.removeItem(SAVE_ORIGINAL); menu.removeItem(SAVE_GIF) }
                 }

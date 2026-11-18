@@ -26,6 +26,7 @@ import com.heihun.pixivplus.core.translate.NovelText
 import com.heihun.pixivplus.core.translate.NovelTranslation
 import com.heihun.pixivplus.core.translate.Translator
 import com.heihun.pixivplus.core.util.MenuHooks
+import com.heihun.pixivplus.core.util.FeatureMenuOrder
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.ConfigurableFeature
@@ -112,11 +113,11 @@ class NovelSaveFeature : ConfigurableFeature(
                         val menu = MenuHooks.readMenu(toolbar) ?: continue
                         var changed = false
                         if (menu.findItem(ID_SAVE_PDF) == null) {
-                            menu.add(Menu.NONE, ID_SAVE_PDF, Menu.NONE, "保存为 PDF")
+                            menu.add(Menu.NONE, ID_SAVE_PDF, FeatureMenuOrder.SAVE_PDF, "保存为 PDF")
                             changed = true
                         }
                         if (menu.findItem(ID_SAVE_TXT) == null) {
-                            menu.add(Menu.NONE, ID_SAVE_TXT, Menu.NONE, "保存为 TXT")
+                            menu.add(Menu.NONE, ID_SAVE_TXT, FeatureMenuOrder.SAVE_TXT, "保存为 TXT")
                             changed = true
                         }
                         if (changed) {

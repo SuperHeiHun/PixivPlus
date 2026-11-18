@@ -14,6 +14,7 @@ import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.util.CurrentWorkHook
 import com.heihun.pixivplus.core.util.DetailPagerResolver
 import com.heihun.pixivplus.core.util.EntityReader
+import com.heihun.pixivplus.core.util.FeatureMenuOrder
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.core.util.WorkPopupHooks
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
@@ -415,15 +416,15 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
     private fun addMenuItems(menu: Menu, toolbar: View? = null): Boolean {
         var changed = false
         if (menu.findItem(ID_BLOCK_BY_TAG) == null) {
-            menu.add(Menu.NONE, ID_BLOCK_BY_TAG, Menu.NONE, "按Tag屏蔽")
+            menu.add(Menu.NONE, ID_BLOCK_BY_TAG, FeatureMenuOrder.BLOCK_TAG, "按Tag屏蔽")
             changed = true
         }
         if (menu.findItem(ID_BLOCK_AUTHOR) == null) {
-            menu.add(Menu.NONE, ID_BLOCK_AUTHOR, Menu.NONE, "屏蔽当前作者")
+            menu.add(Menu.NONE, ID_BLOCK_AUTHOR, FeatureMenuOrder.BLOCK_AUTHOR, "屏蔽当前作者")
             changed = true
         }
         if (menu.findItem(ID_BLOCK_TITLE) == null) {
-            menu.add(Menu.NONE, ID_BLOCK_TITLE, Menu.NONE, "屏蔽当前标题")
+            menu.add(Menu.NONE, ID_BLOCK_TITLE, FeatureMenuOrder.BLOCK_TITLE, "屏蔽当前标题")
             changed = true
         }
         if (changed) {
