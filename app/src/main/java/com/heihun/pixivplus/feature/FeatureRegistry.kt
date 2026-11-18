@@ -23,6 +23,7 @@ object FeatureRegistry {
         features.add(com.heihun.pixivplus.feature.caption.CaptionFixFeature())
         features.add(com.heihun.pixivplus.feature.proxy.AppProxyFeature())
         features.add(com.heihun.pixivplus.feature.novelsave.NovelSaveFeature())
+        features.add(com.heihun.pixivplus.feature.illustsave.IllustSaveFeature())
         features.add(com.heihun.pixivplus.feature.translate.TranslationFeature())
         features.add(com.heihun.pixivplus.feature.drawer.DrawerSlimFeature())
 
@@ -52,6 +53,7 @@ object FeatureRegistry {
         watchedKeys.add(ConfigKeys.PROXY_PASSWORD)
         watchedKeys.add(ConfigKeys.APP_PROXY_ENABLED)
         watchedKeys.add(ConfigKeys.NOVEL_SAVE_ENABLED)
+        watchedKeys.add(ConfigKeys.ILLUST_SAVE_ENABLED)
         watchedKeys.add(ConfigKeys.TRANSLATE_ENABLED)
         watchedKeys.add(ConfigKeys.TRANSLATE_TARGET)
         watchedKeys.add(ConfigKeys.DRAWER_SLIM_ENABLED)

@@ -53,6 +53,10 @@ object ConfigKeys {
     /** 小说保存（PDF / TXT）总开关。 */
     val NOVEL_SAVE_ENABLED = ConfigKey("novel_save_enabled", true, { it.toString() }, { it.toBoolean() })
 
+    /** 插画原图 / ZIP 与 ugoira GIF 保存。 */
+    val ILLUST_SAVE_ENABLED = ConfigKey("illust_save_enabled", true, { it.toString() }, { it.toBoolean() })
+    val ILLUST_SAVE_FOLDER_URI = ConfigKey("illust_save_folder_uri", "", { it }, { it })
+
     /** 简介与小说翻译总开关（使用 Google 翻译免费接口，走模块代理设置）。 */
     val TRANSLATE_ENABLED = ConfigKey("translate_enabled", false, { it.toString() }, { it.toBoolean() })
 
@@ -92,6 +96,7 @@ object ConfigKeys {
         WEBDAV_PASSWORD.name,
         BACKUP_FOLDER_URI.name,
         NOVEL_SAVE_FOLDER_URI.name,
+        ILLUST_SAVE_FOLDER_URI.name,
         BACKUP_PASSWORD.name
     )
 

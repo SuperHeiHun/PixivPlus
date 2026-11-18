@@ -42,6 +42,7 @@ object SettingsPanelBuilder {
         FEATURES("功能开关", "浏览历史、过滤、Premium、广告与简介修复"),
         FILTERS("过滤规则", "关键词、标签与作者"),
         NOVEL_SAVE("小说保存", "PDF / TXT 导出与保存位置"),
+        ILLUST_SAVE("插画与动图保存", "原图 / ZIP / GIF 与保存位置"),
         DRAWER_SLIM("侧边栏精简", "隐藏主抽屉菜单的低频项"),
         PROXY("网络代理", "模块网页请求使用的代理"),
         BACKUP("数据备份", "本地文件夹与 WebDAV"),
@@ -167,6 +168,7 @@ object SettingsPanelBuilder {
                 renderFilterCard(activity, card)
             }
             Screen.NOVEL_SAVE -> buildNovelSavePage(activity, body)
+            Screen.ILLUST_SAVE -> buildIllustSavePage(activity, body)
             Screen.DRAWER_SLIM -> buildDrawerSlimPage(activity, body)
             Screen.PROXY -> {
                 val card = UiKit.card(activity)
@@ -209,6 +211,7 @@ object SettingsPanelBuilder {
         addMenuRow(features, activity, "过滤规则", filterOverview(), Screen.FILTERS, open)
         addMenuRow(features, activity, "浏览历史", historySummary(), Screen.HISTORY, open)
         addMenuRow(features, activity, "小说保存", novelSaveSummary(), Screen.NOVEL_SAVE, open)
+        addMenuRow(features, activity, "插画与动图保存", if (configValue(ConfigKeys.ILLUST_SAVE_ENABLED)) "原图 / ZIP / GIF" else "已关闭", Screen.ILLUST_SAVE, open)
         addMenuRow(features, activity, "侧边栏精简", drawerSlimSummary(), Screen.DRAWER_SLIM, open)
         body.addView(features)
 
@@ -283,6 +286,12 @@ object SettingsPanelBuilder {
             "在小说阅读页菜单中提供保存为 PDF / TXT",
             configValue(ConfigKeys.NOVEL_SAVE_ENABLED)
         ) { checked -> putConfig(ConfigKeys.NOVEL_SAVE_ENABLED, checked) })
+        addRow(card, UiKit.switchRow(
+            activity,
+            "插画与动图保存",
+            "保存全部或自选原图、打包 ZIP，ugoira 转 GIF",
+            configValue(ConfigKeys.ILLUST_SAVE_ENABLED)
+        ) { checked -> putConfig(ConfigKeys.ILLUST_SAVE_ENABLED, checked) })
         addRow(card, UiKit.switchRow(
             activity,
             "简介与小说翻译",
@@ -393,6 +402,36 @@ object SettingsPanelBuilder {
             .split(",")
             .count { it.trim().isNotEmpty() }
         return if (enabled) "精简模式开启 · 隐藏 $hiddenCount 项" else "精简模式关闭 · 已选 $hiddenCount 项"
+    }
+
+    private fun buildIllustSavePage(activity: Activity, body: LinearLayout) {
+        val card = UiKit.card(activity)
+        fun folderLabel(): String {
+            val raw = configText(ConfigKeys.ILLUST_SAVE_FOLDER_URI)
+            if (raw.isBlank()) return "未选择（首次保存时提示选择）"
+            return try {
+                com.heihun.pixivplus.core.backup.BackupManager.folderName(activity, android.net.Uri.parse(raw))
+                    ?: "无法读取（授权可能失效）"
+            } catch (_: Exception) { "无法读取（授权可能失效）" }
+        }
+        val folderRow = UiKit.infoRow(activity, "保存位置", folderLabel())
+        card.addView(folderRow)
+        card.addView(UiKit.filledButtonRow(activity, "选择保存文件夹") {
+            ActivityResultBridge.pickFolder(activity) { resultActivity, uri ->
+                if (uri != null) {
+                    putConfig(ConfigKeys.ILLUST_SAVE_FOLDER_URI, uri.toString())
+                    (folderRow.getChildAt(1) as? TextView)?.text = folderLabel()
+                    Toast.makeText(resultActivity, "已选择保存位置", Toast.LENGTH_SHORT).show()
+                }
+            }
+        })
+        card.addView(UiKit.paragraph(activity,
+            "详情页顶部菜单或作品操作弹窗中选择「保存原图 / ZIP」，可保存全部图片，" +
+                "或输入页码（例如 1,3,5-8）。原图不压缩，ZIP 保留原图文件。\n\n" +
+                "ugoira 动图另有「保存 GIF」，按帧时长循环播放。GIF 使用 256 色，色彩会有差异；" +
+                "最多支持 2000 帧、单帧 400 万像素。保存原图只保存动图的静态原图。\n\n" +
+                "图片与动图下载沿用模块代理。保存位置仅保留在本机，不写入备份。"))
+        body.addView(card)
     }
 
     private fun buildNovelSavePage(activity: Activity, body: LinearLayout) {
