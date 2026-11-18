@@ -174,6 +174,7 @@ internal object TunnelHttpClient {
             isHttps -> 443
             else -> 80
         }
+        com.heihun.pixivplus.core.task.TaskExecution.check()
         val raw = connectProxy(spec, url.host, targetPort, connectTimeoutMs)
         try {
             raw.soTimeout = readTimeoutMs
@@ -199,6 +200,7 @@ internal object TunnelHttpClient {
             val input = BufferedInputStream(stream.getInputStream())
             return readResponse(input, maxBytes)
         } finally {
+            com.heihun.pixivplus.core.task.TaskExecution.unregister(raw)
             try {
                 raw.close()
             } catch (_: Throwable) {
@@ -214,6 +216,7 @@ internal object TunnelHttpClient {
     ): Socket {
         val socket = Socket()
         try {
+            com.heihun.pixivplus.core.task.TaskExecution.register(socket)
             if (spec.mode == ProxyMode.DIRECT) {
                 socket.connect(InetSocketAddress(targetHost, targetPort), timeoutMs)
                 socket.soTimeout = timeoutMs
@@ -229,6 +232,7 @@ internal object TunnelHttpClient {
             }
             return socket
         } catch (t: Throwable) {
+            com.heihun.pixivplus.core.task.TaskExecution.unregister(socket)
             try {
                 socket.close()
             } catch (_: Throwable) {

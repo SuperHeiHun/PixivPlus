@@ -58,6 +58,9 @@ object ConfigKeys {
     val ILLUST_SAVE_FOLDER_URI = ConfigKey("illust_save_folder_uri", "", { it }, { it })
     val ILLUST_SAVE_INCLUDE_LINKS = ConfigKey("illust_save_include_links", false, { it.toString() }, { it.toBoolean() })
     val ILLUST_SAVE_NAME_TEMPLATE = ConfigKey("illust_save_name_template", "{author}_{title}", { it }, { it })
+    val TASK_NOTIFICATIONS_ENABLED = ConfigKey("task_notifications_enabled", true, { it.toString() }, { it.toBoolean() })
+    val TASK_LIST_ENABLED = ConfigKey("task_list_enabled", true, { it.toString() }, { it.toBoolean() })
+    val TASK_HISTORY_ENABLED = ConfigKey("task_history_enabled", true, { it.toString() }, { it.toBoolean() })
 
     /** 简介与小说翻译总开关（使用 Google 翻译免费接口，走模块代理设置）。 */
     val TRANSLATE_ENABLED = ConfigKey("translate_enabled", false, { it.toString() }, { it.toBoolean() })

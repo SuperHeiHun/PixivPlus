@@ -79,11 +79,13 @@ object Translator {
      * 供小说翻译等需要按结构行自行分块的调用方使用。
      */
     fun translateChunk(store: ConfigStore, text: String): Result {
+        com.heihun.pixivplus.core.task.TaskExecution.check()
         if (text.isBlank()) return Result("", null)
         val target = targetOf(store)
         val key = cacheKey(target.code, text)
         cache[key]?.let { return Result(it, null) }
         val translated = requestChunk(store, target.code, text)
+        com.heihun.pixivplus.core.task.TaskExecution.check()
         return if (translated == null) {
             Result(null, lastError ?: "翻译请求失败")
         } else {
@@ -120,11 +122,13 @@ object Translator {
                 ModuleLog.w(TAG, "module translate failed: $reason")
             }
         } catch (t: Throwable) {
+            com.heihun.pixivplus.core.task.TaskExecution.check()
             errors += "模块栈：${t.message ?: t.javaClass.simpleName}"
             ModuleLog.w(TAG, "module translate exception: ${t.javaClass.simpleName}: ${t.message}")
         }
 
         // 2) 宿主网络栈（自动使用系统代理 / App 代理选择器）。
+        com.heihun.pixivplus.core.task.TaskExecution.check()
         requestChunkHost(target, body)?.let { return it }
 
         lastError = (errors + "宿主栈失败").joinToString("；") +
@@ -134,8 +138,12 @@ object Translator {
 
     private fun requestChunkHost(target: String, formBody: String): String? {
         var connection: HttpURLConnection? = null
+        var cancellation: java.io.Closeable? = null
         return try {
             connection = URL("$ENDPOINT&tl=$target").openConnection() as HttpURLConnection
+            val activeConnection = connection
+            cancellation = java.io.Closeable { activeConnection.disconnect() }
+            com.heihun.pixivplus.core.task.TaskExecution.register(cancellation)
             connection.requestMethod = "POST"
             connection.connectTimeout = 8000
             connection.readTimeout = 20000
@@ -161,9 +169,11 @@ object Translator {
                 null
             }
         } catch (t: Throwable) {
+            com.heihun.pixivplus.core.task.TaskExecution.check()
             ModuleLog.w(TAG, "host translate failed: ${t.javaClass.simpleName}: ${t.message}")
             null
         } finally {
+            cancellation?.let { com.heihun.pixivplus.core.task.TaskExecution.unregister(it) }
             try {
                 connection?.disconnect()
             } catch (_: Throwable) {

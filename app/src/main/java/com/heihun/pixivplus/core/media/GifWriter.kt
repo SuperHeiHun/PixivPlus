@@ -22,6 +22,7 @@ class GifWriter(private val output: OutputStream, private val width: Int, privat
     }
 
     fun addFrame(rgb: IntArray, delayMs: Int) {
+        com.heihun.pixivplus.core.task.TaskExecution.check()
         check(!finished)
         require(rgb.size == width * height)
         require(delayMs in 1..655350)
@@ -72,6 +73,7 @@ class GifWriter(private val output: OutputStream, private val width: Int, privat
         emit(256)
         var prefix = palette(rgb[0])
         for (index in 1 until rgb.size) {
+            if (index % 4096 == 0) com.heihun.pixivplus.core.task.TaskExecution.check()
             val value = palette(rgb[index])
             val key = prefix shl 8 or value
             val known = dictionary[key]

@@ -12,8 +12,9 @@ object OriginalArchive {
         require(images.map { it.page }.distinct().size == images.size)
         ZipOutputStream(output).use { zip ->
             images.forEachIndexed { index, image ->
+                com.heihun.pixivplus.core.task.TaskExecution.check()
                 zip.putNextEntry(ZipEntry(MediaNames.image(stem, image)))
-                files[index].inputStream().use { it.copyTo(zip) }
+                files[index].inputStream().use { com.heihun.pixivplus.core.task.TaskExecution.copy(it, zip) }
                 zip.closeEntry()
             }
             if (linksText != null) {

@@ -63,11 +63,15 @@ object MediaRepository {
 
     /** 下载单个文件到本次任务的临时目录，限制单文件大小，避免无界内存占用。 */
     fun download(store: ConfigStore, url: String, destination: File, maxBytes: Int = 64 * 1024 * 1024) {
+        com.heihun.pixivplus.core.task.TaskExecution.check()
         MediaModels.requireImageUrl(url)
         val response = ProxyHttp.getBytes(store, URL(url), headers = mapOf("Referer" to "https://www.pixiv.net/"),
             maxBytes = maxBytes, readTimeoutMs = 60000)
             ?: throw IllegalStateException("图片下载失败，请检查网络代理")
         check(response.code == 200 && response.bytes.isNotEmpty()) { "图片下载失败：HTTP ${response.code}" }
-        destination.outputStream().use { it.write(response.bytes) }
+        com.heihun.pixivplus.core.task.TaskExecution.check()
+        destination.outputStream().use { output ->
+            response.bytes.inputStream().use { com.heihun.pixivplus.core.task.TaskExecution.copy(it, output) }
+        }
     }
 }

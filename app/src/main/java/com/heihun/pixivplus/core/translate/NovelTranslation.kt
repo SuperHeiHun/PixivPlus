@@ -20,11 +20,17 @@ object NovelTranslation {
             Thread(task, "plp-novel-translate").apply { isDaemon = true }
         }
         val completed = ExecutorCompletionService<Pair<NovelText.Group, Translator.Result>>(workers)
+        val taskContext = com.heihun.pixivplus.core.task.TaskExecution.current()
         try {
             for (group in groups) {
-                completed.submit(Callable { group to Translator.translateChunk(store, group.text) })
+                completed.submit(Callable {
+                    com.heihun.pixivplus.core.task.TaskExecution.withContext(taskContext) {
+                        group to Translator.translateChunk(store, group.text)
+                    }
+                })
             }
             for (index in groups.indices) {
+                com.heihun.pixivplus.core.task.TaskExecution.check()
                 val (group, result) = completed.take().get()
                 val text = result.text ?: throw IllegalStateException(result.error ?: "翻译请求失败")
                 val outputs = ArrayList(text.split('\n').map { it.trim() })
