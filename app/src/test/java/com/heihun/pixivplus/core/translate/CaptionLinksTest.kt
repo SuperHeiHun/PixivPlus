@@ -7,6 +7,13 @@ import org.junit.Test
 class CaptionLinksTest {
 
     @Test
+    fun `finds ilust reference alias`() {
+        val links = CaptionLinks.find("ilust/123")
+        assertEquals(1, links.size)
+        assertEquals("pixiv://illusts/123", links[0].deepLink)
+    }
+
+    @Test
     fun `finds plain illust reference`() {
         val text = "前作 illust/123 と関連しています"
         val links = CaptionLinks.find(text)

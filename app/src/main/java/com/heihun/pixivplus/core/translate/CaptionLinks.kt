@@ -4,7 +4,7 @@ package com.heihun.pixivplus.core.translate
  * 从简介 / 译文文本中识别 pixiv 风格引用并转为可点击链接。
  *
  * 支持：
- * - `illust/123`、`illusts/123`、`artworks/123`、`artwork/123`（含全角斜杠）
+ * - `ilust/123`、`illust/123`、`illusts/123`、`artworks/123`、`artwork/123`（含全角斜杠）
  * - `novel/456`、`novels/456`
  * - `user/789`、`users/789`
  * - `pixiv.net/novel/show.php?id=456` 等 pixiv 页面地址
@@ -20,7 +20,7 @@ object CaptionLinks {
     data class Link(val start: Int, val end: Int, val deepLink: String, val webUrl: String)
 
     private val NOVEL_SHOW = Regex("(?i)pixiv\\.net/novel/show\\.php\\?id=(\\d+)")
-    private val ILLUST = Regex("(?i)\\b(?:illusts|illust|artworks|artwork)\\s*[/／]\\s*(\\d+)")
+    private val ILLUST = Regex("(?i)\\b(?:il{1,2}usts?|artworks?)\\s*[/／]\\s*(\\d+)")
     private val NOVEL = Regex("(?i)\\bnovels?\\s*[/／]\\s*(\\d+)")
     private val USER = Regex("(?i)\\busers?\\s*[/／]\\s*(\\d+)")
     private val URL = Regex("https?://[^\\s\\u3000-\\u303F\\uFF01-\\uFF5E<>\"']+")
