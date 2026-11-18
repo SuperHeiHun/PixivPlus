@@ -65,7 +65,7 @@ object TaskManager {
         synchronized(task.lock) {
             if (task.record.state.terminal || task.record.state == TaskState.CANCELLING) return
             task.record = task.record.copy(state = TaskState.CANCELLING, message = "正在取消并清理临时文件…")
-            task.token.cancel()
+            task.token.cancel(closeAsync = true) // 不在通知接收器的主线程阻塞 disconnect。
             TaskNotifications.show(task.record)
         }
     }

@@ -8,6 +8,23 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class TaskExecutionTest {
+    @Test fun `cancel stops copying remaining file data`() {
+        val token = CancellationToken()
+        val output = java.io.ByteArrayOutputStream()
+        val input = object : java.io.ByteArrayInputStream(ByteArray(30000)) {
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                val count = super.read(buffer, offset, length)
+                token.cancel()
+                return count
+            }
+        }
+        try {
+            TaskExecution.withContext(TaskExecution.Context(token, {})) { TaskExecution.copy(input, output) }
+            fail()
+        } catch (_: TaskCancelledException) { }
+        assertTrue(output.size() <= 8192)
+        assertFalse(Thread.currentThread().isInterrupted)
+    }
     @Test fun `cancel closes resources once including resources registered later`() {
         val token = CancellationToken()
         val count = AtomicInteger()

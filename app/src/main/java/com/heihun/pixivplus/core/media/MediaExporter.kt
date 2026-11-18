@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
 import com.heihun.pixivplus.core.config.ConfigStore
+import com.heihun.pixivplus.core.task.TaskExecution
 import java.io.File
 import java.util.zip.ZipFile
 
@@ -15,6 +16,7 @@ object MediaExporter {
     ): List<String> {
         require(images.isNotEmpty())
         val temp = taskDirectory(context)
+        val created = ArrayList<Pair<Uri, Boolean>>()
         try {
             var totalBytes = 0L
             val files = images.mapIndexed { index, image ->
@@ -29,26 +31,34 @@ object MediaExporter {
                 progress("正在打包 ZIP…")
                 val zip = File(temp, "$stem.zip")
                 OriginalArchive.write(zip.outputStream().buffered(), stem, images, files, linksText)
-                return listOf(write(context, parentOf(folder), zip.name, "application/zip", zip))
+                val saved = write(context, parentOf(folder), zip.name, "application/zip", zip, created)
+                TaskExecution.check()
+                return listOf(saved)
             }
             val parent = parentOf(folder)
             val directoryName = uniqueDirectoryName(context, folder, parent, stem)
             val directory = DocumentsContract.createDocument(context.contentResolver, parent,
                 DocumentsContract.Document.MIME_TYPE_DIR, directoryName) ?: error("无法创建作品文件夹")
+            created.add(directory to true)
             val saved = images.mapIndexed { index, image ->
                 progress("正在保存原图… (${index + 1}/${images.size})")
-                "$directoryName/${write(context, directory, MediaNames.image(stem, image), image.mime, files[index])}"
+                "$directoryName/${write(context, directory, MediaNames.image(stem, image), image.mime, files[index], created)}"
             }
             if (linksText != null) {
                 val info = File(temp, "作品信息.txt").apply { writeText(linksText, Charsets.UTF_8) }
-                write(context, directory, info.name, "text/plain", info)
+                write(context, directory, info.name, "text/plain", info, created)
             }
+            TaskExecution.check()
             return saved
+        } catch (t: Throwable) {
+            rollback(context, created)
+            throw t
         } finally { temp.deleteRecursively() } // 仅删除本次任务创建的随机临时目录。
     }
 
     fun saveGif(context: Context, store: ConfigStore, folder: Uri, id: Long, stem: String, progress: (String) -> Unit): String {
         val temp = taskDirectory(context)
+        val created = ArrayList<Pair<Uri, Boolean>>()
         try {
             progress("正在读取动图帧信息…")
             val metadata = MediaRepository.ugoira(store, id)
@@ -75,7 +85,8 @@ object MediaExporter {
                         val bytes = zip.getInputStream(entry).use { input ->
                             val buffer = ByteArray(8192)
                             val output = java.io.ByteArrayOutputStream()
-                            while (true) {
+                        while (true) {
+                                TaskExecution.check()
                                 val count = input.read(buffer)
                                 if (count < 0) break
                                 require(output.size() + count <= 24 * 1024 * 1024) { "动图帧过大" }
@@ -104,7 +115,12 @@ object MediaExporter {
                     require(gif.length() <= 512L * 1024 * 1024) { "GIF 体积过大（最多 512 MB）" }
                 }
             }
-            return write(context, parentOf(folder), gif.name, "image/gif", gif)
+            val saved = write(context, parentOf(folder), gif.name, "image/gif", gif, created)
+            TaskExecution.check()
+            return saved
+        } catch (t: Throwable) {
+            rollback(context, created)
+            throw t
         } finally { temp.deleteRecursively() }
     }
 
@@ -130,17 +146,32 @@ object MediaExporter {
         return name
     }
 
-    private fun write(context: Context, parent: Uri, name: String, mime: String, file: File): String {
+    private fun write(context: Context, parent: Uri, name: String, mime: String, file: File, created: MutableList<Pair<Uri, Boolean>>): String {
+        TaskExecution.check()
         val resolver = context.contentResolver
         val document = DocumentsContract.createDocument(resolver, parent, mime, name) ?: error("无法创建保存文件")
+        created.add(document to false)
         try {
             (resolver.openOutputStream(document, "w") ?: error("无法写入保存文件")).use { output ->
-                file.inputStream().use { it.copyTo(output) }
+                file.inputStream().use { TaskExecution.copy(it, output) }
             }
             return name
         } catch (t: Exception) {
             try { DocumentsContract.deleteDocument(resolver, document) } catch (_: Exception) { }
             throw t
         }
+    }
+
+    /** 只回滚本任务创建的文件；目录如被外部添加内容，不递归删除。 */
+    private fun rollback(context: Context, created: List<Pair<Uri, Boolean>>) {
+        for ((uri, directory) in created.asReversed()) try {
+            if (directory) {
+                val children = DocumentsContract.buildChildDocumentsUriUsingTree(uri, DocumentsContract.getDocumentId(uri))
+                val empty = context.contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
+                    ?.use { !it.moveToFirst() } ?: false
+                if (!empty) continue
+            }
+            DocumentsContract.deleteDocument(context.contentResolver, uri)
+        } catch (_: Exception) { }
     }
 }

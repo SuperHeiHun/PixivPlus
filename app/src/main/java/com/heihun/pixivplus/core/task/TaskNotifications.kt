@@ -21,6 +21,8 @@ object TaskNotifications {
     private const val ACTION = "jp.pxv.android.pixivplus.CANCEL_TASK"
     private val shown = ConcurrentHashMap.newKeySet<String>()
     private var initialized = false
+    // API 33+ 显式 NOT_EXPORTED；旧系统没有该标志，不能用需要宿主声明权限的 ContextCompat 包装。
+    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Synchronized private fun initialize(context: Context, manager: NotificationManager) {
         if (initialized) return
         val channel = NotificationChannel(CHANNEL, "PixivPlus 下载与翻译（静默）", NotificationManager.IMPORTANCE_LOW).apply {
@@ -36,6 +38,8 @@ object TaskNotifications {
         else { @Suppress("DEPRECATION") context.registerReceiver(receiver, IntentFilter(ACTION)) }
         initialized = true
     }
+    // 运行于宿主进程，使用宿主权限而非模块 Manifest；发送前检查宿主 POST_NOTIFICATIONS。
+    @android.annotation.SuppressLint("NotificationPermission")
     fun show(record: TaskRecord) {
         try {
             val context = Host.context() ?: return

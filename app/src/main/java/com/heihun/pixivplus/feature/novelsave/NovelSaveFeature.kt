@@ -25,6 +25,10 @@ import com.heihun.pixivplus.core.net.ProxyHttp
 import com.heihun.pixivplus.core.translate.NovelText
 import com.heihun.pixivplus.core.translate.NovelTranslation
 import com.heihun.pixivplus.core.translate.Translator
+import com.heihun.pixivplus.core.task.TaskExecution
+import com.heihun.pixivplus.core.task.TaskManager
+import com.heihun.pixivplus.core.task.TaskKind
+import com.heihun.pixivplus.core.task.TaskCancelledException
 import com.heihun.pixivplus.core.util.MenuHooks
 import com.heihun.pixivplus.core.util.FeatureMenuOrder
 import com.heihun.pixivplus.core.util.ReflectUtil
@@ -284,19 +288,23 @@ class NovelSaveFeature : ConfigurableFeature(
         val snapshot = WorkContext.current?.takeIf { it.id == id }
         val title = snapshot?.title?.takeIf { it.isNotBlank() } ?: "novel_$id"
         val author = snapshot?.authorName.orEmpty()
+        val task = TaskManager.begin(TaskKind.DOWNLOAD, "小说${if (asPdf) "PDF" else "TXT"}保存：$title")
         Thread({
             var result: String? = null
             var error: String? = null
             try {
-                val outputBlocks = if (translated) {
-                    NovelText.toBlocks(NovelTranslation.translate(ConfigStoreRegistry.store, blocks) { done, total ->
-                        runOnUi(activity) { toast(activity, "正在翻译小说用于保存… ($done/$total)") }
-                    })
-                } else blocks
-                result = save(appContext, id, title, author, outputBlocks, asPdf, translated)
+                result = task.execute {
+                    val outputBlocks = if (translated) {
+                        NovelText.toBlocks(NovelTranslation.translate(ConfigStoreRegistry.store, blocks) { done, total ->
+                            TaskExecution.progress("正在翻译小说用于保存… ($done/$total)")
+                        })
+                    } else blocks
+                    TaskExecution.progress("正在生成${if (asPdf) " PDF" else " TXT"}…")
+                    save(appContext, id, title, author, outputBlocks, asPdf, translated)
+                }
                 ModuleLog.i(displayName, "novel saved id=$id pdf=$asPdf file=$result")
             } catch (t: Throwable) {
-                error = t.message ?: t.javaClass.simpleName
+                error = if (t is TaskCancelledException) "任务已取消" else t.message ?: t.javaClass.simpleName
                 ModuleLog.w(displayName, "novel save failed id=$id", t)
             }
             runOnUi(activity) {
@@ -362,9 +370,11 @@ class NovelSaveFeature : ConfigurableFeature(
         val seen = HashSet<String>()
         var count = 0
         for (block in blocks) {
+            TaskExecution.check()
             if (block !is NovelBlock.Picture) continue
             if (count >= MAX_IMAGES) break
             count++
+            TaskExecution.progress("正在下载小说配图… ($count/${minOf(MAX_IMAGES, blocks.count { it is NovelBlock.Picture })})")
             val key = NovelMarkers.imageKey(block)
             if (!seen.add(key)) continue
             result[key] = downloadBitmapAny(store, block.url)
@@ -375,6 +385,7 @@ class NovelSaveFeature : ConfigurableFeature(
     /** 优先走模块网络栈（含代理设置），失败时退回宿主网络栈（系统 / App 代理）。 */
     private fun downloadBitmapAny(store: ConfigStore, url: String): Bitmap? {
         downloadBitmap(store, url)?.let { return it }
+        TaskExecution.check()
         return downloadBitmapHost(url)
     }
 
@@ -403,8 +414,12 @@ class NovelSaveFeature : ConfigurableFeature(
 
     private fun downloadBitmapHost(url: String): Bitmap? {
         var connection: HttpURLConnection? = null
+        var cancellation: java.io.Closeable? = null
         return try {
             connection = URL(url).openConnection() as HttpURLConnection
+            val activeConnection = connection
+            cancellation = java.io.Closeable { activeConnection.disconnect() }
+            TaskExecution.register(cancellation)
             connection.connectTimeout = 8000
             connection.readTimeout = 20000
             connection.setRequestProperty("Referer", WEB_REFERER)
@@ -421,6 +436,7 @@ class NovelSaveFeature : ConfigurableFeature(
             ModuleLog.w(displayName, "host image download failed: ${t.javaClass.simpleName}: ${t.message}")
             null
         } finally {
+            cancellation?.let { TaskExecution.unregister(it) }
             try {
                 connection?.disconnect()
             } catch (_: Throwable) {
@@ -466,33 +482,8 @@ class NovelSaveFeature : ConfigurableFeature(
         }
         val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocumentId)
 
-        // 同名文件先删除再创建，避免部分 DocumentsProvider 忽略截断标记。
-        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocumentId)
-        var existing: Uri? = null
-        try {
-            resolver.query(
-                childrenUri,
-                arrayOf(
-                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                    DocumentsContract.Document.COLUMN_DISPLAY_NAME
-                ),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                while (cursor.moveToNext()) {
-                    if (cursor.getString(1) == name) {
-                        existing = DocumentsContract.buildDocumentUriUsingTree(treeUri, cursor.getString(0))
-                        break
-                    }
-                }
-            }
-            existing?.let { uri ->
-                DocumentsContract.deleteDocument(resolver, uri)
-            }
-        } catch (t: Throwable) {
-            ModuleLog.w(displayName, "query / delete existing file failed: ${t.message}")
-        }
+        // 取消时只删除本次新建文件，不提前删除同名的旧下载。
+        TaskExecution.check()
 
         val documentUri = try {
             DocumentsContract.createDocument(resolver, parentUri, mime, name)
@@ -502,12 +493,13 @@ class NovelSaveFeature : ConfigurableFeature(
 
         try {
             resolver.openOutputStream(documentUri, "wt")?.use { output ->
-                output.write(bytes)
+                bytes.inputStream().use { TaskExecution.copy(it, output) }
                 output.flush()
             } ?: throw SaveException("无法写入文件")
-        } catch (t: SaveException) {
-            throw t
+            TaskExecution.check()
         } catch (t: Throwable) {
+            try { DocumentsContract.deleteDocument(resolver, documentUri) } catch (_: Exception) { }
+            if (t is TaskCancelledException) throw t
             throw SaveException("写入文件失败：${t.message ?: t.javaClass.simpleName}")
         }
     }

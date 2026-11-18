@@ -147,6 +147,7 @@ object NovelPdfWriter {
             drawDivider()
 
             for (block in blocks) {
+                com.heihun.pixivplus.core.task.TaskExecution.check()
                 when (block) {
                     is NovelBlock.PageBreak -> {
                         newPage()

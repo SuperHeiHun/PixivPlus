@@ -23,11 +23,13 @@ class CancellationToken {
     fun unregister(resource: Closeable) { resources.remove(resource) }
     fun attach(thread: Thread) { threads.add(thread); if (isCancelled) thread.interrupt() }
     fun detach(thread: Thread) { threads.remove(thread) }
-    fun cancel() {
+    fun cancel(closeAsync: Boolean = false) {
         if (!cancelled.compareAndSet(false, true)) return
         threads.forEach { it.interrupt() }
-        resources.forEach { try { it.close() } catch (_: Exception) {} }
+        val closing = resources.toList()
         resources.clear()
+        val close = { closing.forEach { try { it.close() } catch (_: Exception) {} } }
+        if (closeAsync) Thread({ close() }, "plp-task-cancel").apply { isDaemon = true }.start() else close()
     }
 }
 

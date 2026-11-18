@@ -30,6 +30,10 @@ import com.heihun.pixivplus.core.translate.CaptionLinks
 import com.heihun.pixivplus.core.translate.NovelText
 import com.heihun.pixivplus.core.translate.NovelTranslation
 import com.heihun.pixivplus.core.translate.Translator
+import com.heihun.pixivplus.core.task.TaskManager
+import com.heihun.pixivplus.core.task.TaskKind
+import com.heihun.pixivplus.core.task.TaskExecution
+import com.heihun.pixivplus.core.task.TaskCancelledException
 import com.heihun.pixivplus.core.util.EntityReader
 import com.heihun.pixivplus.core.util.FeatureMenuOrder
 import com.heihun.pixivplus.core.util.DetailPagerResolver
@@ -200,9 +204,21 @@ class TranslationFeature : ConfigurableFeature(
             return
         }
         val holder = captionDialog(activity, "正在翻译…")
+        val task = TaskManager.begin(TaskKind.TRANSLATE, "简介翻译")
+        holder.dialog.setOnDismissListener { TaskManager.cancel(task.record.id) }
         executor.execute {
             val store = ConfigStoreRegistry.store
-            val result = Translator.translate(store, caption)
+            val result = try {
+                task.execute {
+                    val translated = Translator.translate(store, caption) { done, total ->
+                        TaskExecution.progress("正在翻译简介… (${done + 1}/$total)")
+                    }
+                    check(translated.text != null) { translated.error ?: "翻译失败" }
+                    translated
+                }
+            } catch (t: Exception) {
+                Translator.Result(null, if (t is TaskCancelledException) "任务已取消" else t.message ?: "翻译失败")
+            }
             runOnUi(activity) {
                 try {
                     holder.body.text = if (result.text != null) {
@@ -467,19 +483,22 @@ class TranslationFeature : ConfigurableFeature(
      * 连续文本行合并为组翻译后逐行回填；渲染为 HTML 走覆盖层显示。
      */
     private fun startNovelTranslation(activity: Activity, webView: WebView, blocks: List<NovelBlock>) {
+        val task = TaskManager.begin(TaskKind.TRANSLATE, "小说翻译：${WorkContext.current?.title.orEmpty()}")
         showProgress(activity, "正在翻译小说…")
         executor.execute {
             val store = ConfigStoreRegistry.store
             val html = try {
-                val translated = NovelTranslation.translate(store, blocks) { done, total ->
-                    showProgress(activity, "正在翻译小说… ($done/$total)")
+                task.execute {
+                    val translated = NovelTranslation.translate(store, blocks) { done, total ->
+                        showProgress(activity, "正在翻译小说… ($done/$total)")
+                    }
+                    NovelText.toHtml(translated)
                 }
-                NovelText.toHtml(translated)
             } catch (t: Exception) {
                 ModuleLog.w(displayName, "novel translation failed", t)
                 runOnUi(activity) {
                     translating.set(false)
-                    toast(activity, "翻译失败：${t.message ?: t.javaClass.simpleName}")
+                    toast(activity, if (t is TaskCancelledException) "小说翻译已取消" else "翻译失败：${t.message ?: t.javaClass.simpleName}")
                 }
                 return@execute
             } finally {
@@ -539,6 +558,8 @@ class TranslationFeature : ConfigurableFeature(
     // ------------------------------------------------------------------
 
     private fun showProgress(activity: Activity, message: String) {
+        TaskExecution.progress(message)
+        if (ConfigStoreRegistry.store.get(ConfigKeys.TASK_NOTIFICATIONS_ENABLED)) return
         runOnUi(activity) {
             try {
                 progressToast?.cancel()

@@ -11,6 +11,10 @@ import com.heihun.pixivplus.core.media.MediaExporter
 import com.heihun.pixivplus.core.media.MediaRepository
 import com.heihun.pixivplus.core.media.MediaInfo
 import com.heihun.pixivplus.core.media.MediaNames
+import com.heihun.pixivplus.core.task.TaskExecution
+import com.heihun.pixivplus.core.task.TaskKind
+import com.heihun.pixivplus.core.task.TaskManager
+import com.heihun.pixivplus.core.task.TaskCancelledException
 import com.heihun.pixivplus.core.media.OriginalImage
 import com.heihun.pixivplus.core.util.CurrentWorkHook
 import com.heihun.pixivplus.core.util.DetailPagerResolver
@@ -161,7 +165,7 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
                     MediaExporter.saveOriginals(activity.applicationContext, store, folder, stem, images, which == 1, linksText) {
                         progress(activity, it)
                     }
-                }) { names -> toast(activity, "已保存 ${names.size} 个文件：${names.first()}") }
+                }, taskTitle = "原图保存：$stem") { names -> toast(activity, "已保存 ${names.size} 个文件：${names.first()}") }
             }
         }
     }
@@ -175,7 +179,7 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
                     val info = MediaRepository.info(store, id, entity)
                     val stem = MediaNames.stem(info.author, info.title, id, store.get(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE))
                     MediaExporter.saveGif(activity.applicationContext, store, folder, id, stem) { progress(activity, it) }
-                }) { name -> toast(activity, "已保存：$name") }
+                }, taskTitle = "GIF 保存：${EntityReader.title(entity ?: entities[id] ?: Any()) ?: id}") { name -> toast(activity, "已保存：$name") }
             }
         }
     }
@@ -191,13 +195,14 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
         }
     }
 
-    private fun <T> runJob(activity: Activity, initial: String, work: () -> T, done: (T) -> Unit) {
+    private fun <T> runJob(activity: Activity, initial: String, work: () -> T, taskTitle: String? = null, done: (T) -> Unit) {
         if (!busy.compareAndSet(false, true)) { toast(activity, "正在保存中，请稍候…"); return }
         lastProgress = 0
         toast(activity, initial)
+        val task = taskTitle?.let { TaskManager.begin(TaskKind.DOWNLOAD, it) }
         executor.execute {
             try {
-                val result = work()
+                val result = if (task == null) work() else task.execute(work)
                 activity.runOnUiThread {
                     progressToast?.cancel()
                     if (!activity.isFinishing && !activity.isDestroyed) done(result)
@@ -208,13 +213,15 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
                 activity.runOnUiThread {
                     progressToast?.cancel()
                     val reason = if (t is OutOfMemoryError) "内存不足，请减少保存页数或选择较小的动图" else t.message ?: t.javaClass.simpleName
-                    toast(activity, "保存失败：$reason")
+                    toast(activity, if (t is TaskCancelledException) "保存任务已取消" else "保存失败：$reason")
                 }
             } finally { busy.set(false) }
         }
     }
 
     private fun progress(activity: Activity, message: String) {
+        TaskExecution.progress(message)
+        if (ConfigStoreRegistry.store.get(ConfigKeys.TASK_NOTIFICATIONS_ENABLED)) return
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastProgress < 800) return
         lastProgress = now
