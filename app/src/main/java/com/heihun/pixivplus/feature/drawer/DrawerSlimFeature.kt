@@ -8,6 +8,8 @@ import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.util.ReflectUtil
+import com.heihun.pixivplus.core.util.DetailPagerResolver
+import com.heihun.pixivplus.ui.panel.SettingsPanelBuilder
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.ConfigurableFeature
 import de.robv.android.xposed.XC_MethodHook
@@ -33,6 +35,8 @@ class DrawerSlimFeature : ConfigurableFeature(
 
         /** 注入按钮的自定义 itemId（避开宿主 0x7f 段）。 */
         private const val TOGGLE_ITEM_ID = 0x60011001
+        private const val TASK_ITEM_ID = 0x60011002
+        private const val TASK_ENTRY_NAME = "drawer_menu_pixivplus_tasks"
 
         /** 注入按钮的排序权重，确保排在菜单末尾。 */
         private const val TOGGLE_ORDER = 999
@@ -56,7 +60,8 @@ class DrawerSlimFeature : ConfigurableFeature(
             "drawer_menu_about" to "关于本APP",
             "drawer_menu_support" to "帮助与反馈",
             "drawer_menu_setting" to "设置",
-            "drawer_menu_mute_setting" to "屏蔽设定"
+            "drawer_menu_mute_setting" to "屏蔽设定",
+            TASK_ENTRY_NAME to "PixivPlus 任务列表"
         )
     }
 
@@ -176,6 +181,7 @@ class DrawerSlimFeature : ConfigurableFeature(
         val hidden = hiddenItems()
 
         ensureToggleItem(menu, slim)
+        ensureTaskItem(view, menu)
 
         var changed = 0
         applyToMenu(view, menu, slim, hidden) { changed += it }
@@ -193,14 +199,15 @@ class DrawerSlimFeature : ConfigurableFeature(
         for (index in 0 until menu.size()) {
             val item = menu.getItem(index) ?: continue
             if (item.itemId == TOGGLE_ITEM_ID) continue
-            val entryName = try {
+            val entryName = if (item.itemId == TASK_ITEM_ID) TASK_ENTRY_NAME else try {
                 view.resources.getResourceEntryName(item.itemId)
             } catch (_: Throwable) {
                 null
             } ?: continue
             // 只管理侧边栏自身的菜单项，App 默认不可见的其他项不得强改可见性。
             if (!entryName.startsWith("drawer_menu_")) continue
-            val targetVisible = !(slim && entryName in hidden)
+            val targetVisible = !(slim && entryName in hidden) &&
+                (item.itemId != TASK_ITEM_ID || ConfigStoreRegistry.store.get(ConfigKeys.TASK_LIST_ENABLED))
             if (item.isVisible != targetVisible) {
                 item.isVisible = targetVisible
                 changed++
@@ -212,6 +219,20 @@ class DrawerSlimFeature : ConfigurableFeature(
     }
 
     /** 注入「精简侧边栏」按钮（幂等，点击切换精简模式；order 放大保证排在菜单末尾）。 */
+    private fun ensureTaskItem(view: View, menu: Menu) {
+        if (!ConfigStoreRegistry.store.get(ConfigKeys.TASK_LIST_ENABLED) || menu.findItem(TASK_ITEM_ID) != null) return
+        menu.add(0, TASK_ITEM_ID, 998, "PixivPlus 任务列表").apply {
+            setIcon(android.R.drawable.ic_menu_agenda)
+            isCheckable = false
+            setOnMenuItemClickListener {
+                DetailPagerResolver.activityOf(view.context)?.let { activity ->
+                    SettingsPanelBuilder.show(activity, SettingsPanelBuilder.Screen.TASKS)
+                }
+                true
+            }
+        }
+    }
+
     private fun ensureToggleItem(menu: Menu, slim: Boolean) {
         val existing = menu.findItem(TOGGLE_ITEM_ID)
         val title = if (slim) "恢复全部菜单" else "精简侧边栏"

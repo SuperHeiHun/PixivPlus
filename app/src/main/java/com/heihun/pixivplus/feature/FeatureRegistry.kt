@@ -54,6 +54,9 @@ object FeatureRegistry {
         watchedKeys.add(ConfigKeys.APP_PROXY_ENABLED)
         watchedKeys.add(ConfigKeys.NOVEL_SAVE_ENABLED)
         watchedKeys.add(ConfigKeys.ILLUST_SAVE_ENABLED)
+        watchedKeys.add(ConfigKeys.TASK_NOTIFICATIONS_ENABLED)
+        watchedKeys.add(ConfigKeys.TASK_LIST_ENABLED)
+        watchedKeys.add(ConfigKeys.TASK_HISTORY_ENABLED)
         watchedKeys.add(ConfigKeys.TRANSLATE_ENABLED)
         watchedKeys.add(ConfigKeys.TRANSLATE_TARGET)
         watchedKeys.add(ConfigKeys.DRAWER_SLIM_ENABLED)
@@ -61,6 +64,7 @@ object FeatureRegistry {
 
         for (key in watchedKeys) {
             config.addListener(key) { value ->
+                if (key.name == ConfigKeys.TASK_NOTIFICATIONS_ENABLED.name) com.heihun.pixivplus.core.task.TaskManager.refreshNotifications()
                 ModuleLog.i("FeatureRegistry", "config ${key.name} changed -> $value")
                 for (feature in features) {
                     try {

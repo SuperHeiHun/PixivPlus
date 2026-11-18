@@ -43,6 +43,7 @@ object SettingsPanelBuilder {
         FILTERS("过滤规则", "关键词、标签与作者"),
         NOVEL_SAVE("小说保存", "PDF / TXT 导出与保存位置"),
         ILLUST_SAVE("插画与动图保存", "原图 / ZIP / GIF 与保存位置"),
+        TASKS("任务列表", "下载与翻译、下载历史及通知"),
         DRAWER_SLIM("侧边栏精简", "隐藏主抽屉菜单的低频项"),
         PROXY("网络代理", "模块网页请求使用的代理"),
         BACKUP("数据备份", "本地文件夹与 WebDAV"),
@@ -169,6 +170,7 @@ object SettingsPanelBuilder {
             }
             Screen.NOVEL_SAVE -> buildNovelSavePage(activity, body)
             Screen.ILLUST_SAVE -> buildIllustSavePage(activity, body)
+            Screen.TASKS -> TaskPanel.build(activity, body)
             Screen.DRAWER_SLIM -> buildDrawerSlimPage(activity, body)
             Screen.PROXY -> {
                 val card = UiKit.card(activity)
@@ -212,6 +214,7 @@ object SettingsPanelBuilder {
         addMenuRow(features, activity, "浏览历史", historySummary(), Screen.HISTORY, open)
         addMenuRow(features, activity, "小说保存", novelSaveSummary(), Screen.NOVEL_SAVE, open)
         addMenuRow(features, activity, "插画与动图保存", if (configValue(ConfigKeys.ILLUST_SAVE_ENABLED)) "原图 / ZIP / GIF" else "已关闭", Screen.ILLUST_SAVE, open)
+        addMenuRow(features, activity, "任务列表", "下载与翻译、静默通知与下载历史", Screen.TASKS, open)
         addMenuRow(features, activity, "侧边栏精简", drawerSlimSummary(), Screen.DRAWER_SLIM, open)
         body.addView(features)
 
