@@ -44,6 +44,7 @@ object SettingsPanelBuilder {
         NOVEL_SAVE("小说保存", "PDF / TXT 导出与保存位置"),
         ILLUST_SAVE("插画与动图保存", "原图 / ZIP / GIF 与保存位置"),
         TASKS("任务列表", "下载与翻译、下载历史及通知"),
+        CACHE("模块缓存", "下载断点、预览与翻译缓存清理"),
         DRAWER_SLIM("侧边栏精简", "隐藏主抽屉菜单的低频项"),
         PROXY("网络代理", "模块网页请求使用的代理"),
         BACKUP("数据备份", "本地文件夹与 WebDAV"),
@@ -173,7 +174,8 @@ object SettingsPanelBuilder {
             }
             Screen.NOVEL_SAVE -> buildNovelSavePage(activity, body)
             Screen.ILLUST_SAVE -> buildIllustSavePage(activity, body)
-            Screen.TASKS -> TaskPanel.build(activity, body)
+            Screen.TASKS -> TaskPanel.build(activity, body) { open(Screen.CACHE) }
+            Screen.CACHE -> CachePanel.build(activity, body)
             Screen.DRAWER_SLIM -> buildDrawerSlimPage(activity, body)
             Screen.PROXY -> {
                 val card = UiKit.card(activity)
@@ -229,6 +231,7 @@ object SettingsPanelBuilder {
 
         body.addView(UiKit.sectionTitle(activity, "其他"))
         val others = UiKit.card(activity)
+        addMenuRow(others, activity, "模块缓存", "清理断点、预览和翻译缓存", Screen.CACHE, open)
         addMenuRow(others, activity, "诊断", diagnosticsSummary(), Screen.DIAGNOSTICS, open)
         addMenuRow(others, activity, "关于", aboutSummary(), Screen.ABOUT, open)
         body.addView(others)

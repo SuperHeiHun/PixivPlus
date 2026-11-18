@@ -65,13 +65,9 @@ object MediaRepository {
     fun download(store: ConfigStore, url: String, destination: File, maxBytes: Int = 64 * 1024 * 1024) {
         com.heihun.pixivplus.core.task.TaskExecution.check()
         MediaModels.requireImageUrl(url)
-        val response = ProxyHttp.getBytes(store, URL(url), headers = mapOf("Referer" to "https://www.pixiv.net/"),
-            maxBytes = maxBytes, readTimeoutMs = 60000)
-            ?: throw IllegalStateException("图片下载失败，请检查网络代理")
-        check(response.code == 200 && response.bytes.isNotEmpty()) { "图片下载失败：HTTP ${response.code}" }
-        com.heihun.pixivplus.core.task.TaskExecution.check()
-        destination.outputStream().use { output ->
-            response.bytes.inputStream().use { com.heihun.pixivplus.core.task.TaskExecution.copy(it, output) }
+        ProxyHttp.downloadFile(store, URL(url), destination, maxBytes.toLong()) { done, total ->
+            if (total > 0) com.heihun.pixivplus.core.task.TaskExecution.progress("正在下载 ${destination.name}… ($done/$total)")
+            else com.heihun.pixivplus.core.task.TaskExecution.progress("正在下载 ${destination.name}… 已接收 $done 字节")
         }
     }
 }

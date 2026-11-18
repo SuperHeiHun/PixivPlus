@@ -8,6 +8,12 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class TaskExecutionTest {
+    @Test fun `history retains work link and download replay data`() {
+        val plan = com.heihun.pixivplus.core.media.DownloadPlan(123, "作品", "content://folder/tree/test",
+            com.heihun.pixivplus.core.media.DownloadFormat.IMAGES, listOf(1, 3)).encode()
+        val record = TaskRecord("id", "作品", TaskKind.DOWNLOAD, TaskState.CANCELLED, workId = 123, downloadPlan = plan)
+        assertEquals(record, TaskRecords.decode(TaskRecords.encode(listOf(record))).single())
+    }
     @Test fun `cancel stops copying remaining file data`() {
         val token = CancellationToken()
         val output = java.io.ByteArrayOutputStream()

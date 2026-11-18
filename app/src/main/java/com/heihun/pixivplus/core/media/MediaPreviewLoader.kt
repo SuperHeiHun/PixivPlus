@@ -8,6 +8,12 @@ import java.net.URL
 
 /** 小图预览走模块代理，限制响应大小并采样解码，不缓存原图到磁盘。 */
 object MediaPreviewLoader {
+    private val caches = java.util.concurrent.CopyOnWriteArrayList<java.lang.ref.WeakReference<android.util.LruCache<Int, Bitmap>>>()
+    fun register(cache: android.util.LruCache<Int, Bitmap>) {
+        caches.removeAll { it.get() == null }
+        caches.add(java.lang.ref.WeakReference(cache))
+    }
+    fun clearCaches() { caches.forEach { it.get()?.evictAll() }; caches.removeAll { it.get() == null } }
     fun load(store: ConfigStore, url: String, targetSize: Int): Bitmap? {
         MediaModels.requireImageUrl(url)
         val response = ProxyHttp.getBytes(store, URL(url), mapOf("Referer" to "https://www.pixiv.net/"),

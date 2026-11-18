@@ -11,7 +11,8 @@ enum class TaskState(val label: String, val terminal: Boolean = false) {
 data class TaskRecord(
     val id: String, val title: String, val kind: TaskKind, val state: TaskState = TaskState.QUEUED,
     val message: String = "等待处理", val createdAt: Long = System.currentTimeMillis(),
-    val finishedAt: Long = 0, val done: Int = 0, val total: Int = 0
+    val finishedAt: Long = 0, val done: Int = 0, val total: Int = 0,
+    val workId: Long = 0, val workType: String = "ILLUST", val downloadPlan: String? = null
 )
 
 object TaskRecords {
@@ -20,7 +21,8 @@ object TaskRecords {
         records.take(HISTORY_LIMIT).forEach { record -> put(JSONObject()
             .put("id", record.id).put("title", record.title).put("kind", record.kind.name)
             .put("state", record.state.name).put("message", record.message).put("created", record.createdAt)
-            .put("finished", record.finishedAt).put("done", record.done).put("total", record.total)) }
+            .put("finished", record.finishedAt).put("done", record.done).put("total", record.total)
+            .put("work", record.workId).put("work_type", record.workType).put("download_plan", record.downloadPlan)) }
     }.toString()
     fun decode(text: String): List<TaskRecord> = try {
         val array = JSONArray(text)
@@ -31,7 +33,9 @@ object TaskRecords {
                 TaskRecord(item.getString("id"), item.getString("title"), TaskKind.valueOf(item.getString("kind")),
                     if (state.terminal) state else TaskState.INTERRUPTED,
                     if (state.terminal) item.optString("message") else TaskState.INTERRUPTED.label,
-                    item.getLong("created"), item.optLong("finished"), item.optInt("done"), item.optInt("total"))
+                    item.getLong("created"), item.optLong("finished"), item.optInt("done"), item.optInt("total"),
+                    item.optLong("work"), item.optString("work_type", "ILLUST"),
+                    if (item.isNull("download_plan")) null else item.optString("download_plan").takeIf { it.isNotBlank() })
             } catch (_: Exception) { null }
         }
     } catch (_: Exception) { emptyList() }

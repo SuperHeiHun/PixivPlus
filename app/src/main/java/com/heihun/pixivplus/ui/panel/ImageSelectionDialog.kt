@@ -38,6 +38,7 @@ object ImageSelectionDialog {
         val previews = object : LruCache<Int, Bitmap>(6 * 1024) {
             override fun sizeOf(key: Int, value: Bitmap): Int = maxOf(1, value.byteCount / 1024)
         }
+        MediaPreviewLoader.register(previews)
         val workers = ThreadPoolExecutor(3, 3, 0, TimeUnit.MILLISECONDS, ArrayBlockingQueue<Runnable>(24),
             { task -> Thread(task, "plp-image-preview").apply { isDaemon = true } }, ThreadPoolExecutor.AbortPolicy())
         root.addView(UiKit.dialogHeader(activity, "自定义保存图片", null) { UiKit.dismissAnimated(dialog, root) })

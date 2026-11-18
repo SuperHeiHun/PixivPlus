@@ -42,9 +42,10 @@ object TaskManager {
             loaded = true
         }
     }
-    fun begin(kind: TaskKind, title: String): TaskHandle {
+    fun begin(kind: TaskKind, title: String, workId: Long = 0, workType: String = "ILLUST", downloadPlan: String? = null): TaskHandle {
         loadHistory()
-        val task = TaskHandle(TaskRecord(java.util.UUID.randomUUID().toString(), title.take(160), kind))
+        val task = TaskHandle(TaskRecord(java.util.UUID.randomUUID().toString(), title.take(160), kind,
+            workId = workId, workType = workType, downloadPlan = downloadPlan))
         active[task.record.id] = task
         persist(task.record)
         TaskNotifications.show(task.record)
@@ -64,7 +65,8 @@ object TaskManager {
         val task = active[id] ?: return
         synchronized(task.lock) {
             if (task.record.state.terminal || task.record.state == TaskState.CANCELLING) return
-            task.record = task.record.copy(state = TaskState.CANCELLING, message = "正在取消并清理临时文件…")
+            task.record = task.record.copy(state = TaskState.CANCELLING,
+                message = if (task.record.downloadPlan == null) "正在取消并清理临时文件…" else "正在取消，已下载数据将保留用于续传…")
             task.token.cancel(closeAsync = true) // 不在通知接收器的主线程阻塞 disconnect。
             TaskNotifications.show(task.record)
         }

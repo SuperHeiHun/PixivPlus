@@ -12,16 +12,16 @@ import java.util.zip.ZipFile
 object MediaExporter {
     fun saveOriginals(
         context: Context, store: ConfigStore, folder: Uri, stem: String,
-        images: List<OriginalImage>, asZip: Boolean, linksText: String?, progress: (String) -> Unit
+        images: List<OriginalImage>, asZip: Boolean, linksText: String?, checkpoint: File, progress: (String) -> Unit
     ): List<String> {
         require(images.isNotEmpty())
-        val temp = taskDirectory(context)
+        val temp = scratchDirectory(checkpoint)
         val created = ArrayList<Pair<Uri, Boolean>>()
         try {
             var totalBytes = 0L
             val files = images.mapIndexed { index, image ->
                 progress("正在下载原图… (${index + 1}/${images.size})")
-                File(temp, "${image.page}_${image.fileName}").also {
+                File(checkpoint, "${image.page}_${image.fileName}").also {
                     MediaRepository.download(store, image.url, it)
                     totalBytes += it.length()
                     require(totalBytes <= 512L * 1024 * 1024) { "本次原图体积过大（最多 512 MB），请减少选择页数" }
@@ -56,13 +56,13 @@ object MediaExporter {
         } finally { temp.deleteRecursively() } // 仅删除本次任务创建的随机临时目录。
     }
 
-    fun saveGif(context: Context, store: ConfigStore, folder: Uri, id: Long, stem: String, progress: (String) -> Unit): String {
-        val temp = taskDirectory(context)
+    fun saveGif(context: Context, store: ConfigStore, folder: Uri, id: Long, stem: String, checkpoint: File, progress: (String) -> Unit): String {
+        val temp = scratchDirectory(checkpoint)
         val created = ArrayList<Pair<Uri, Boolean>>()
         try {
             progress("正在读取动图帧信息…")
             val metadata = MediaRepository.ugoira(store, id)
-            val archive = File(temp, "frames.zip")
+            val archive = File(checkpoint, "frames.zip")
             progress("正在下载动图…")
             MediaRepository.download(store, metadata.zipUrl, archive, 128 * 1024 * 1024)
             val gif = File(temp, "$stem.gif")
@@ -124,9 +124,9 @@ object MediaExporter {
         } finally { temp.deleteRecursively() }
     }
 
-    private fun taskDirectory(context: Context): File =
-        File(context.cacheDir, "plp-media-${java.util.UUID.randomUUID()}").apply {
-            check(mkdir()) { "无法创建下载临时目录" }
+    private fun scratchDirectory(checkpoint: File): File =
+        File(checkpoint, "export-${java.util.UUID.randomUUID()}").apply {
+            check(mkdirs()) { "无法创建下载临时目录" }
         }
 
     /** 创建新文档，不覆盖同名文件；失败时清理本次创建的半成品。 */

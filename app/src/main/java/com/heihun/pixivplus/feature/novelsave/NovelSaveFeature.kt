@@ -288,7 +288,7 @@ class NovelSaveFeature : ConfigurableFeature(
         val snapshot = WorkContext.current?.takeIf { it.id == id }
         val title = snapshot?.title?.takeIf { it.isNotBlank() } ?: "novel_$id"
         val author = snapshot?.authorName.orEmpty()
-        val task = TaskManager.begin(TaskKind.DOWNLOAD, "小说${if (asPdf) "PDF" else "TXT"}保存：$title")
+        val task = TaskManager.begin(TaskKind.DOWNLOAD, "小说${if (asPdf) "PDF" else "TXT"}保存：$title", id, "NOVEL")
         Thread({
             var result: String? = null
             var error: String? = null

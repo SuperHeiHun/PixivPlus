@@ -42,6 +42,7 @@ object Translator {
     )
 
     private val cache = ConcurrentHashMap<String, String>()
+    fun clearCache() { cache.clear() }
 
     fun targetOf(store: ConfigStore): Target {
         val configured = store.get(ConfigKeys.TRANSLATE_TARGET)
