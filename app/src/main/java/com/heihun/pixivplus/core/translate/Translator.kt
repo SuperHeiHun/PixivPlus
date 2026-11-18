@@ -21,7 +21,9 @@ object Translator {
     private const val TAG = "Translator"
     private const val ENDPOINT =
         "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&dt=t"
-    private const val MAX_CHUNK_CHARS = 3500
+
+    /** 单次请求的最大文本长度；调用方可据此自行分块。 */
+    const val MAX_CHUNK_CHARS = 3500
     private const val MAX_CACHE_ENTRIES = 400
     private const val MODULE_UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -57,26 +59,38 @@ object Translator {
         onProgress: ((done: Int, total: Int) -> Unit)? = null
     ): Result {
         if (text.isBlank()) return Result("", null)
-        val target = targetOf(store)
-        val key = cacheKey(target.code, text)
-        cache[key]?.let { return Result(it, null) }
-
         val chunks = splitChunks(text)
         if (chunks.isEmpty()) return Result("", null)
         val builder = StringBuilder()
         for ((index, chunk) in chunks.withIndex()) {
             onProgress?.invoke(index, chunks.size)
-            val translated = requestChunk(store, target.code, chunk)
-            if (translated == null) {
-                return Result(null, lastError ?: "翻译请求失败")
+            val result = translateChunk(store, chunk)
+            if (result.text == null) {
+                return Result(null, result.error ?: lastError ?: "翻译请求失败")
             }
             if (builder.isNotEmpty()) builder.append('\n')
-            builder.append(translated)
+            builder.append(result.text)
         }
-        val result = builder.toString()
-        if (cache.size > MAX_CACHE_ENTRIES) cache.clear()
-        cache[key] = result
-        return Result(result, null)
+        return Result(builder.toString(), null)
+    }
+
+    /**
+     * 翻译单块文本（不做切分，调用方自行保证不超过 [MAX_CHUNK_CHARS]），结果带内存缓存。
+     * 供小说翻译等需要按结构行自行分块的调用方使用。
+     */
+    fun translateChunk(store: ConfigStore, text: String): Result {
+        if (text.isBlank()) return Result("", null)
+        val target = targetOf(store)
+        val key = cacheKey(target.code, text)
+        cache[key]?.let { return Result(it, null) }
+        val translated = requestChunk(store, target.code, text)
+        return if (translated == null) {
+            Result(null, lastError ?: "翻译请求失败")
+        } else {
+            if (cache.size > MAX_CACHE_ENTRIES) cache.clear()
+            cache[key] = translated
+            Result(translated, null)
+        }
     }
 
     private fun requestChunk(store: ConfigStore, target: String, chunk: String): String? {
