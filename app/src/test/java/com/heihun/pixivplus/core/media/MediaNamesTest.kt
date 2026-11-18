@@ -5,6 +5,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MediaNamesTest {
+    @Test fun `repeated placeholders are substituted without interpreting author text as template`() {
+        assertEquals("{id}_标题_123_123", MediaNames.stem("{id}", "标题", 123, "{author}_{title}_{id}_{id}"))
+    }
+    @Test(expected = IllegalArgumentException::class) fun `stem rejects corrupt saved template`() {
+        MediaNames.stem("作者", "标题", 123, "{invalid}")
+    }
     @Test fun `custom templates support id and fixed literals`() {
         assertEquals("123-标题-作者", MediaNames.stem("作者", "标题", 123, "{id}-{title}-{author}"))
         assertEquals("自定义名称", MediaNames.stem("作者", "标题", 123, "自定义名称"))

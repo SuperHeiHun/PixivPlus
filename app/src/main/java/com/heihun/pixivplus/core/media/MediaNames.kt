@@ -13,7 +13,8 @@ object MediaNames {
     fun stem(author: String?, title: String?, id: Long, template: String = DEFAULT_TEMPLATE): String {
         validateTemplate(template)
         val values = mapOf("author" to component(author, "未知作者", 60), "title" to component(title, "作品$id", 120), "id" to id.toString())
-        val resolved = Regex("\\{(author|title|id)}").replace(template) { values.getValue(it.groupValues[1]) }
+        // Android ICU 要求字面量左右花括号都转义，不能依赖桌面 JVM 的宽松语法。
+        val resolved = Regex("\\{(author|title|id)\\}").replace(template) { values.getValue(it.groupValues[1]) }
         return component(resolved, "作品$id", 180)
     }
 

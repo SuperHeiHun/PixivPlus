@@ -148,7 +148,12 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
     private fun chooseFormat(activity: Activity, info: MediaInfo, images: List<OriginalImage>) {
         ChoiceDialog.show(activity, "保存格式（${images.size} 张）", listOf("保存原图到作品文件夹", "打包为 ZIP"), -1) { which ->
             val store = ConfigStoreRegistry.store
-            val stem = MediaNames.stem(info.author, info.title, info.id, store.get(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE))
+            val stem = try {
+                MediaNames.stem(info.author, info.title, info.id, store.get(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE))
+            } catch (_: IllegalArgumentException) {
+                toast(activity, "保存命名无效，请在「插画与动图保存 → 自定义保存命名」中修改或恢复默认")
+                return@show
+            }
             val linksText = if (store.get(ConfigKeys.ILLUST_SAVE_INCLUDE_LINKS)) info.linksText() else null
             chooseFolder(activity) { folder ->
                 runJob(activity, "正在保存原图…", {
