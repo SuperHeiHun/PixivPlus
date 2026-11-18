@@ -15,6 +15,7 @@ import com.heihun.pixivplus.core.util.CurrentWorkHook
 import com.heihun.pixivplus.core.util.DetailPagerResolver
 import com.heihun.pixivplus.core.util.EntityReader
 import com.heihun.pixivplus.core.util.ReflectUtil
+import com.heihun.pixivplus.core.util.WorkPopupHooks
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.ConfigurableFeature
 import com.heihun.pixivplus.ui.panel.ConfirmDialog
@@ -66,6 +67,18 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
     private val detailDepth = java.util.concurrent.atomic.AtomicInteger(0)
 
     override fun hook(host: Host) {
+        WorkPopupHooks.register(host, "屏蔽作者", { isEnabled(ConfigStoreRegistry.store) }) { activity, entity ->
+            val snapshot = com.heihun.pixivplus.core.WorkSnapshot(
+                id = (ReflectUtil.invoke(entity, ReflectUtil.findMethod(entity.javaClass, "getId")) as? Long) ?: 0L,
+                type = EntityReader.type(entity, "ILLUST"),
+                title = EntityReader.title(entity),
+                authorId = EntityReader.authorId(entity),
+                authorName = EntityReader.authorName(entity),
+                authorAccount = EntityReader.authorAccount(entity),
+                tags = EntityReader.tags(entity)
+            )
+            blockAuthor(activity, snapshot)
+        }
         hookToolbarListener(host)
         hookCaptionView(host)
         hookPageChange(host)
@@ -451,9 +464,12 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
         }
     }
 
-    private fun blockAuthor() {
-        val activity = currentActivity ?: return
-        val snapshot = resolveSnapshot()
+    private fun blockAuthor(
+        targetActivity: Activity? = currentActivity,
+        snapshot: com.heihun.pixivplus.core.WorkSnapshot? = resolveSnapshot()
+    ) {
+        val activity = targetActivity ?: return
+        if (!isEnabled(ConfigStoreRegistry.store)) return
         val authorId = snapshot?.authorId?.takeIf { it > 0L }
         val fallbackName = snapshot?.authorName?.takeIf { it.isNotEmpty() }
             ?: snapshot?.authorAccount?.takeIf { it.isNotEmpty() }
