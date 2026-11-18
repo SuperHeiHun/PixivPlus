@@ -13,6 +13,7 @@ object FeatureRegistry {
     fun installAll(host: Host, config: ConfigManager) {
         features.clear()
         watchedKeys.clear()
+        com.heihun.pixivplus.core.task.TaskNavigation.install(host)
 
         features.add(com.heihun.pixivplus.feature.ads.AdsFeature())
         features.add(com.heihun.pixivplus.feature.filter.FilterFeature())

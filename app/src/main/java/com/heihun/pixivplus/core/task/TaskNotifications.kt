@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap
 object TaskNotifications {
     private const val CHANNEL = "pixivplus_tasks_silent"
     private const val ACTION = "jp.pxv.android.pixivplus.CANCEL_TASK"
+    private const val CANCEL_SCHEME = "pixivplus-task"
     private val shown = ConcurrentHashMap.newKeySet<String>()
     private var initialized = false
     // API 33+ 显式 NOT_EXPORTED；旧系统没有该标志，不能用需要宿主声明权限的 ContextCompat 包装。
@@ -34,8 +35,10 @@ object TaskNotifications {
                 if (intent.action == ACTION) intent.getStringExtra("task_id")?.let { TaskManager.cancel(it) }
             }
         }
-        if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(receiver, IntentFilter(ACTION), Context.RECEIVER_NOT_EXPORTED)
-        else { @Suppress("DEPRECATION") context.registerReceiver(receiver, IntentFilter(ACTION)) }
+        // PendingIntent 使用任务 URI 区分身份；接收器必须同时匹配 scheme，否则带 data 的广播不会命中。
+        val filter = IntentFilter(ACTION).apply { addDataScheme(CANCEL_SCHEME) }
+        if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        else { @Suppress("DEPRECATION") context.registerReceiver(receiver, filter) }
         initialized = true
     }
     // 运行于宿主进程，使用宿主权限而非模块 Manifest；发送前检查宿主 POST_NOTIFICATIONS。
@@ -54,12 +57,13 @@ object TaskNotifications {
                 .setContentTitle("PixivPlus · ${record.title}")
                 .setContentText(record.message)
                 .setStyle(Notification.BigTextStyle().bigText(record.message))
+                .setContentIntent(TaskNavigation.contentIntent(context))
                 .setOnlyAlertOnce(true).setVisibility(Notification.VISIBILITY_PRIVATE)
                 .setOngoing(!record.state.terminal).setAutoCancel(record.state.terminal)
             if (!record.state.terminal) {
                 notification.setProgress(record.total, record.done, record.total <= 0)
                 val intent = Intent(ACTION).setPackage(Host.PACKAGE).putExtra("task_id", record.id)
-                    .setData(android.net.Uri.parse("pixivplus-task://${record.id}"))
+                    .setData(android.net.Uri.parse("$CANCEL_SCHEME://${record.id}"))
                 val pending = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
                 notification.addAction(Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "取消", pending).build())
             } else notification.setTimeoutAfter(60000)

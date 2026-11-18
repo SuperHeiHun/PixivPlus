@@ -2,6 +2,7 @@ package com.heihun.pixivplus.ui.panel
 
 import android.app.Activity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.task.TaskManager
@@ -37,6 +38,8 @@ object TaskPanel {
         val refresh = object : Runnable {
             override fun run() {
                 if (!body.isAttachedToWindow) return
+                // 不在按下/抬起之间重建按钮，否则进度刷新可能吞掉取消点击。
+                if (hasPressedView(list)) { body.postDelayed(this, 250); return }
                 val active = TaskManager.activeTasks()
                 val history = TaskManager.history()
                 val enabled = store.get(ConfigKeys.TASK_HISTORY_ENABLED)
@@ -59,6 +62,13 @@ object TaskPanel {
             override fun onViewDetachedFromWindow(view: View) { body.removeCallbacks(refresh) }
         })
         if (body.isAttachedToWindow) body.post(refresh)
+    }
+    private fun hasPressedView(view: View): Boolean {
+        if (view.isPressed) return true
+        if (view is ViewGroup) for (index in 0 until view.childCount) {
+            if (hasPressedView(view.getChildAt(index))) return true
+        }
+        return false
     }
     private fun addRecord(activity: Activity, list: LinearLayout, record: TaskRecord, active: Boolean) {
         val card = UiKit.card(activity)
