@@ -2,7 +2,15 @@ package com.heihun.pixivplus.feature.translate
 
 import android.app.Activity
 import android.app.Dialog
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.text.Html
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.TextPaint
+import android.text.method.LinkMovementMethod
+import android.text.style.ClickableSpan
 import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
@@ -16,7 +24,10 @@ import com.heihun.pixivplus.core.WorkContext
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.net.PayloadProcessor
+import com.heihun.pixivplus.core.novel.NovelBlock
 import com.heihun.pixivplus.core.novel.NovelExtractor
+import com.heihun.pixivplus.core.translate.CaptionLinks
+import com.heihun.pixivplus.core.translate.NovelText
 import com.heihun.pixivplus.core.translate.Translator
 import com.heihun.pixivplus.core.util.EntityReader
 import com.heihun.pixivplus.core.util.DetailPagerResolver
@@ -25,6 +36,7 @@ import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.ConfigurableFeature
 import com.heihun.pixivplus.ui.UiKit
+import com.heihun.pixivplus.ui.theme.Md3
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import org.json.JSONArray
@@ -38,7 +50,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 简介与小说翻译。
  *
  * - 详情页（插画 / 小说）菜单「翻译简介」：读取当前作品简介，弹窗对照原文与译文；
- * - 小说阅读页菜单「翻译小说 / 显示原文」：整篇翻译后替换阅读页内容，可随时还原。
+ *   简介中的 `illust/123`、`user/456` 等引用与 URL 自动转为可点击链接（优先 pixiv 深链）。
+ * - 小说阅读页菜单「翻译小说 / 显示原文」：按结构行翻译后以覆盖层显示，可随时还原；
+ *   空行 / 插图 / 分页 / 章节标题由本地保留，原文 DOM 移入隐藏包装层（不销毁），
+ *   配图与宿主交互不受影响，还原后原样恢复。
  *
  * 翻译使用 Google 翻译免费端点（沿用模块代理设置），功能默认关闭。
  */
@@ -194,6 +209,7 @@ class TranslationFeature : ConfigurableFeature(
                         "翻译失败：${result.error ?: "未知错误"}"
                     }
                     holder.body.setTextIsSelectable(true)
+                    applyCaptionLinks(holder.body)
                     fitCaptionDialog(activity, holder)
                 } catch (t: Throwable) {
                     ModuleLog.w(displayName, "update caption dialog failed", t)
@@ -291,6 +307,49 @@ class TranslationFeature : ConfigurableFeature(
         }
     }
 
+    /**
+     * 把简介弹窗文本中的 `illust/123`、`user/456`、URL 等引用转为可点击链接
+     * （点击优先 pixiv 深链在宿主内打开，失败退回浏览器打开网页地址）。
+     */
+    private fun applyCaptionLinks(textView: TextView) {
+        val text = textView.text?.toString() ?: return
+        val links = CaptionLinks.find(text)
+        if (links.isEmpty()) return
+        val spannable = SpannableString(text)
+        val context = textView.context
+        val color = Md3.colors(context).primary
+        for (link in links) {
+            spannable.setSpan(
+                object : ClickableSpan() {
+                    override fun onClick(widget: View) {
+                        openCaptionLink(context, link)
+                    }
+
+                    override fun updateDrawState(ds: TextPaint) {
+                        ds.color = color
+                        ds.isUnderlineText = false
+                    }
+                },
+                link.start,
+                link.end,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        textView.text = spannable
+        textView.movementMethod = LinkMovementMethod.getInstance()
+    }
+
+    private fun openCaptionLink(context: Context, link: CaptionLinks.Link) {
+        for (url in listOf(link.deepLink, link.webUrl)) {
+            try {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                return
+            } catch (_: Throwable) {
+            }
+        }
+        ModuleLog.w(displayName, "open caption link failed: ${link.deepLink}")
+    }
+
     private class CaptionDialogHolder(
         val dialog: Dialog,
         val scroll: ScrollView,
@@ -370,7 +429,7 @@ class TranslationFeature : ConfigurableFeature(
         toast(activity, "正在读取小说内容…")
         try {
             webView.evaluateJavascript(NovelExtractor.EXTRACT_SCRIPT) { raw ->
-                val text = try {
+                val blocks = try {
                     val decoded = JSONTokener(raw ?: "null").nextValue()
                     val tokens = when (decoded) {
                         is JSONArray -> decoded
@@ -381,17 +440,17 @@ class TranslationFeature : ConfigurableFeature(
                         }
                         else -> null
                     }
-                    if (tokens == null) "" else NovelExtractor.toPlainText(NovelExtractor.blocksFromTokens(tokens))
+                    if (tokens == null) emptyList() else NovelExtractor.blocksFromTokens(tokens)
                 } catch (t: Throwable) {
                     ModuleLog.w(displayName, "parse novel content failed", t)
-                    ""
+                    emptyList()
                 }
-                if (text.isBlank()) {
+                if (blocks.isEmpty()) {
                     translating.set(false)
                     toast(activity, "未读取到小说内容，请等页面加载完成后再试")
                     return@evaluateJavascript
                 }
-                startNovelTranslation(activity, webView, text)
+                startNovelTranslation(activity, webView, blocks)
             }
         } catch (t: Throwable) {
             translating.set(false)
@@ -400,22 +459,47 @@ class TranslationFeature : ConfigurableFeature(
         }
     }
 
-    private fun startNovelTranslation(activity: Activity, webView: WebView, text: String) {
+    /**
+     * 结构保留的小说翻译：
+     * 空行 / 插图 / 分页 / 章节标题不参与翻译、位置原样保留，
+     * 连续文本行合并为组翻译后逐行回填；渲染为 HTML 走覆盖层显示。
+     */
+    private fun startNovelTranslation(activity: Activity, webView: WebView, blocks: List<NovelBlock>) {
+        val lines = NovelText.buildLines(blocks)
+        val groups = NovelText.group(lines)
+        if (groups.isEmpty()) {
+            translating.set(false)
+            toast(activity, "没有可翻译的文本")
+            return
+        }
         showProgress(activity, "正在翻译小说…")
         executor.execute {
             val store = ConfigStoreRegistry.store
-            val result = Translator.translate(store, text) { done, total ->
-                showProgress(activity, "正在翻译小说… (${done + 1}/$total)")
+            var failure: String? = null
+            for ((index, group) in groups.withIndex()) {
+                showProgress(activity, "正在翻译小说… (${index + 1}/${groups.size})")
+                val result = Translator.translateChunk(store, group.text)
+                if (result.text == null) {
+                    failure = result.error ?: "未知错误"
+                    break
+                }
+                val outLines = ArrayList(result.text.split('\n').map { it.trim() })
+                while (outLines.isNotEmpty() && outLines.last().isEmpty()) outLines.removeAt(outLines.size - 1)
+                group.outputs.addAll(if (outLines.isEmpty()) listOf("") else outLines)
             }
             hideProgress()
+            if (failure != null) {
+                runOnUi(activity) {
+                    translating.set(false)
+                    toast(activity, "翻译失败：$failure")
+                }
+                return@execute
+            }
+            val html = NovelText.toHtml(NovelText.render(lines, groups))
             runOnUi(activity) {
                 translating.set(false)
-                if (result.text == null) {
-                    toast(activity, "翻译失败：${result.error ?: "未知错误"}")
-                    return@runOnUi
-                }
                 try {
-                    webView.evaluateJavascript(NovelExtractor.applyTranslationScript(result.text)) { value ->
+                    webView.evaluateJavascript(NovelExtractor.applyTranslationScript(html)) { value ->
                         if (value?.trim('"') == "true") {
                             toast(activity, "已显示译文，可在菜单选择「显示原文」还原")
                         } else {
