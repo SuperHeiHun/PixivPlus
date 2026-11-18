@@ -10,6 +10,18 @@ class NovelTextTest {
     private fun text(value: String) = NovelBlock.Text(value)
 
     @Test
+    fun `many short paragraphs use one request and retain local blanks`() {
+        val blocks = (1..100).flatMap { listOf(text("段落$it"), text("")) }
+        val lines = NovelText.buildLines(blocks)
+        val groups = NovelText.group(lines)
+        assertEquals(1, groups.size)
+        groups[0].outputs.addAll((1..100).map { "译文$it" })
+        val rendered = NovelText.render(lines, groups)
+        assertEquals(100, rendered.count { it is NovelText.Line.Text })
+        assertEquals(99, rendered.count { it is NovelText.Line.Blank })
+    }
+
+    @Test
     fun `build lines keeps blank lines and page breaks`() {
         val lines = NovelText.buildLines(
             listOf(
@@ -39,19 +51,17 @@ class NovelTextTest {
     }
 
     @Test
-    fun `group merges consecutive text lines and stops at blanks`() {
+    fun `group batches across blanks and stops at images`() {
         val lines = NovelText.buildLines(
             listOf(text("A"), text("B"), text(""), text("C"), NovelBlock.Picture("https://x/i.jpg"), text("D"))
         )
         val groups = NovelText.group(lines, maxChars = 100)
-        assertEquals(3, groups.size)
-        assertEquals("A\nB", groups[0].text)
+        assertEquals(2, groups.size)
+        assertEquals("A\nB\n\nC", groups[0].text)
         assertEquals(0, groups[0].startIndex)
-        assertEquals(2, groups[0].lineCount)
-        assertEquals("C", groups[1].text)
-        assertEquals(3, groups[1].startIndex)
-        assertEquals("D", groups[2].text)
-        assertEquals(5, groups[2].startIndex)
+        assertEquals(4, groups[0].lineCount)
+        assertEquals("D", groups[1].text)
+        assertEquals(5, groups[1].startIndex)
     }
 
     @Test
@@ -67,10 +77,9 @@ class NovelTextTest {
             listOf(text("A"), text(""), text("B"), NovelBlock.Picture("https://x/i.jpg"), text("C"))
         )
         val groups = NovelText.group(lines)
-        assertEquals(3, groups.size)
-        groups[0].outputs.add("甲")
-        groups[1].outputs.add("乙")
-        groups[2].outputs.add("丙")
+        assertEquals(2, groups.size)
+        groups[0].outputs.addAll(listOf("甲", "", "乙"))
+        groups[1].outputs.add("丙")
         val rendered = NovelText.render(lines, groups)
         assertEquals(5, rendered.size)
         assertTrue((rendered[0] as NovelText.Line.Text).value == "甲")

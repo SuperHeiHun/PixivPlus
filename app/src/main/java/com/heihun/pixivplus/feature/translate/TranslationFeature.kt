@@ -476,16 +476,33 @@ class TranslationFeature : ConfigurableFeature(
         executor.execute {
             val store = ConfigStoreRegistry.store
             var failure: String? = null
-            for ((index, group) in groups.withIndex()) {
-                showProgress(activity, "正在翻译小说… (${index + 1}/${groups.size})")
-                val result = Translator.translateChunk(store, group.text)
-                if (result.text == null) {
-                    failure = result.error ?: "未知错误"
-                    break
+            // 小型有界并发池：降低网络往返累计耗时，不无限并发冲击免费端点。
+            val workers = java.util.concurrent.Executors.newFixedThreadPool(minOf(3, groups.size)) { task ->
+                Thread(task, "plp-novel-translate").apply { isDaemon = true }
+            }
+            val completed = java.util.concurrent.ExecutorCompletionService<Pair<NovelText.Group, Translator.Result>>(workers)
+            try {
+                for (group in groups) {
+                    completed.submit(java.util.concurrent.Callable {
+                        group to Translator.translateChunk(store, group.text)
+                    })
                 }
-                val outLines = ArrayList(result.text.split('\n').map { it.trim() })
-                while (outLines.isNotEmpty() && outLines.last().isEmpty()) outLines.removeAt(outLines.size - 1)
-                group.outputs.addAll(if (outLines.isEmpty()) listOf("") else outLines)
+                for (index in groups.indices) {
+                    val (group, result) = completed.take().get()
+                    if (result.text == null) {
+                        failure = result.error ?: "未知错误"
+                        break
+                    }
+                    val outLines = ArrayList(result.text.split('\n').map { it.trim() })
+                    while (outLines.isNotEmpty() && outLines.last().isEmpty()) outLines.removeAt(outLines.size - 1)
+                    group.outputs.addAll(if (outLines.isEmpty()) listOf("") else outLines)
+                    showProgress(activity, "正在翻译小说… (${index + 1}/${groups.size})")
+                }
+            } catch (t: Exception) {
+                failure = "翻译任务失败：${t.javaClass.simpleName}"
+                ModuleLog.w(displayName, "novel translation failed", t)
+            } finally {
+                workers.shutdownNow()
             }
             hideProgress()
             if (failure != null) {

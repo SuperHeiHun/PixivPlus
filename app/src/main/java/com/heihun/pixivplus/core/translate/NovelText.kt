@@ -34,7 +34,7 @@ object NovelText {
     }
 
     /**
-     * 一次翻译请求覆盖的行组：[startIndex] 起连续 [lineCount] 行（均为文本 / 标题），
+     * 一次翻译请求覆盖的行组：[startIndex] 起连续 [lineCount] 行（文本 / 标题 / 空行），
      * [text] 为组内原文按换行拼接；[outputs] 为译文行（通常与行数一致）。
      */
     class Group(val startIndex: Int, val lineCount: Int, val text: String) {
@@ -67,7 +67,7 @@ object NovelText {
 
     /**
      * 把连续的文本 / 标题行合并为翻译组（单组不超过 [maxChars]），
-     * 空行 / 插图 / 分页是天然的分隔点，不进入请求。
+     * 跨空行合并，减少短段落小说的请求数；插图 / 分页仍是分隔点。
      */
     fun group(lines: List<Line>, maxChars: Int = Translator.MAX_CHUNK_CHARS): List<Group> {
         val groups = ArrayList<Group>()
@@ -85,6 +85,7 @@ object NovelText {
                 val value = when (val line = lines[index]) {
                     is Line.Text -> line.value
                     is Line.Chapter -> line.value
+                    is Line.Blank -> ""
                     else -> break
                 }
                 if (builder.isNotEmpty() && builder.length + value.length + 1 > maxChars) break
@@ -115,14 +116,16 @@ object NovelText {
                 index++
                 continue
             }
-            val translatable = (group.startIndex until group.startIndex + group.lineCount)
-                .all { lines[it] is Line.Text || lines[it] is Line.Chapter }
-            if (group.outputs.size == group.lineCount && translatable) {
+            val sourceLines = lines.subList(index, index + group.lineCount)
+            val outputs = group.outputs.filter { it.isNotBlank() }
+            val textCount = sourceLines.count { it is Line.Text || it is Line.Chapter }
+            if (outputs.size == textCount) {
+                var outputIndex = 0
                 for (offset in 0 until group.lineCount) {
-                    val value = group.outputs[offset]
-                    when (val source = lines[index + offset]) {
-                        is Line.Chapter -> rendered.add(Line.Chapter(value))
-                        else -> rendered.add(Line.Text(value))
+                    when (val source = sourceLines[offset]) {
+                        is Line.Chapter -> rendered.add(Line.Chapter(outputs[outputIndex++]))
+                        is Line.Text -> rendered.add(Line.Text(outputs[outputIndex++]))
+                        else -> rendered.add(source)
                     }
                 }
             } else {
