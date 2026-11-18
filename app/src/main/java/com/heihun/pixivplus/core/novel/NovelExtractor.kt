@@ -20,8 +20,8 @@ object NovelExtractor {
      * 阅读页结构（实测 /webview/v2/novel 服务端渲染）：
      * `<body id="content">` 下有封面 / 标题 / 收藏 / 简介等，正文固定在
      * `<div id="text">` 中，分页为 `<div id="N" class="page">`，每行是
-     * `<span id="lineN">` + `<br>`。优先取 `#text`，缺失时退回「高度 + 段落 +
-     * 深度」评分定位；选中的容器存到 `window.__plpTarget`，供译文替换 /
+     * `<span id="lineN">` + `<br>`。只取已知正文容器 `#text`，缺失时返回空结果，
+     * 不按高度猜测或退回 body，避免把评论等整页内容导出；容器存到 `window.__plpTarget`，供译文替换 /
      * 还原使用。遍历时跳过隐藏元素、注音节点、按钮与短链接文本；
      * 标题元素（H1-H6）内的文本以 `h` token 输出用于章节排版；
      * 已显示译文时（存在包装层）改为提取原文包装层，保证可重复翻译。
@@ -29,41 +29,23 @@ object NovelExtractor {
     const val EXTRACT_SCRIPT = """
 (function(){
   var out=[];
+  var target=document.getElementById('text');
+  if(!target){window.__plpTarget=null;return JSON.stringify(out);}
   var wrap=document.getElementById('plp-original-wrap');
+  if(wrap&&wrap.parentNode!==target)wrap=null;
   function visible(el){
     try{
       if(wrap&&wrap.contains(el))return true;
       return el.getClientRects().length>0;
     }catch(e){return true;}
   }
-  function pickRoot(){
-    try{
-      var t=document.getElementById('text');
-      if(t)return t;
-    }catch(e){}
-    var body=document.body;
-    var bodyLen=(body.textContent||'').length||1;
-    var best=null,bestScore=-1;
-    try{
-      var els=body.querySelectorAll('div,section,article,main');
-      for(var i=0;i<els.length;i++){
-        var el=els[i];
-        if(!visible(el))continue;
-        var t=el.textContent||'';
-        if(t.length<Math.max(200,bodyLen*0.4))continue;
-        var rect=el.getBoundingClientRect();
-        if(rect.height<100)continue;
-        var depth=0,n=el;
-        while(n&&n!==body){n=n.parentElement;depth++;}
-        var pCount=el.querySelectorAll('p').length;
-        var score=rect.height*2+pCount*800+depth*50;
-        if(score>bestScore){bestScore=score;best=el;}
-      }
-    }catch(e){}
-    return best||body;
+  function excluded(el){
+    // 根据节点标识过滤 UI 区域，不按正文文字过滤，避免误删小说里的「评论」等字样。
+    var identity=(el.id||'')+' '+(el.className||'');
+    return /(^|[\s_-])(comments?|replies|caption|recommendations?|related|ads?|advertisement|bookmark|social)([\s_-]|$)/i.test(identity);
   }
-  var root=wrap||pickRoot();
-  try{window.__plpTarget=wrap&&wrap.parentNode?wrap.parentNode:root;}catch(e){}
+  var root=wrap||target;
+  window.__plpTarget=target;
   var hdepth=0;
   function walk(node){
     var children=node.childNodes;
@@ -74,6 +56,7 @@ object NovelExtractor {
         if(t&&t.trim())out.push({t:hdepth>0?'h':'x',s:t});
       }else if(n.nodeType===1){
         var tag=n.tagName;
+        if(excluded(n))continue;
         if(tag==='SCRIPT'||tag==='STYLE'||tag==='NOSCRIPT'||tag==='RT'||tag==='RP'||tag==='NAV'||tag==='HEADER'||tag==='FOOTER'||tag==='BUTTON'||tag==='INPUT'||tag==='SELECT'||tag==='OPTION')continue;
         if(!visible(n))continue;
         if(tag==='A'&&(n.textContent||'').trim().length<=30)continue;
@@ -107,8 +90,8 @@ object NovelExtractor {
      */
     fun applyTranslationScript(html: String): String {
         return "(function(html){try{" +
-            "var el=window.__plpTarget||document.body;" +
-            "if(!el)return false;" +
+            "var el=window.__plpTarget;" +
+            "if(!el||el!==document.getElementById('text'))return false;" +
             "var wrap=document.getElementById('plp-original-wrap');" +
             "if(!wrap||wrap.parentNode!==el){" +
             "if(wrap&&wrap.parentNode)wrap.parentNode.removeChild(wrap);" +
