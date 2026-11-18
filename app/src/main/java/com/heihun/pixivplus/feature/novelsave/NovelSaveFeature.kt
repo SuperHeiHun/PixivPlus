@@ -22,11 +22,15 @@ import com.heihun.pixivplus.core.novel.NovelExtractor
 import com.heihun.pixivplus.core.novel.NovelMarkers
 import com.heihun.pixivplus.core.novel.NovelPdfWriter
 import com.heihun.pixivplus.core.net.ProxyHttp
+import com.heihun.pixivplus.core.translate.NovelText
+import com.heihun.pixivplus.core.translate.NovelTranslation
+import com.heihun.pixivplus.core.translate.Translator
 import com.heihun.pixivplus.core.util.MenuHooks
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.ConfigurableFeature
 import com.heihun.pixivplus.ui.ActivityResultBridge
+import com.heihun.pixivplus.ui.panel.ChoiceDialog
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import org.json.JSONArray
@@ -176,6 +180,22 @@ class NovelSaveFeature : ConfigurableFeature(
             toast(activity, "未找到小说内容，请返回后重新进入阅读页")
             return
         }
+        ChoiceDialog.show(
+            activity,
+            "选择保存内容",
+            listOf("保存原版", "翻译后保存（${Translator.targetOf(ConfigStoreRegistry.store).label}）"),
+            selectedIndex = -1
+        ) { selected ->
+            val translated = selected == 1
+            if (translated && !ConfigStoreRegistry.store.get(ConfigKeys.TRANSLATE_ENABLED)) {
+                toast(activity, "请先在模块设置中开启「简介与小说翻译」")
+            } else {
+                chooseFolderAndSave(activity, id, asPdf, translated)
+            }
+        }
+    }
+
+    private fun chooseFolderAndSave(activity: Activity, id: Long, asPdf: Boolean, translated: Boolean) {
         val folder = try {
             ConfigStoreRegistry.store.get(ConfigKeys.NOVEL_SAVE_FOLDER_URI)
         } catch (_: Throwable) {
@@ -194,11 +214,11 @@ class NovelSaveFeature : ConfigurableFeature(
                     ModuleLog.w(displayName, "store save folder failed", t)
                 }
                 toast(resultActivity, "已选择保存位置")
-                extractAndSave(resultActivity, id, asPdf)
+                extractAndSave(resultActivity, id, asPdf, translated)
             }
             return
         }
-        extractAndSave(activity, id, asPdf)
+        extractAndSave(activity, id, asPdf, translated)
     }
 
     private fun novelId(activity: Activity): Long {
@@ -220,7 +240,7 @@ class NovelSaveFeature : ConfigurableFeature(
         return null
     }
 
-    private fun extractAndSave(activity: Activity, id: Long, asPdf: Boolean) {
+    private fun extractAndSave(activity: Activity, id: Long, asPdf: Boolean, translated: Boolean) {
         val webView = findWebView(activity.window?.decorView)
         if (webView == null) {
             toast(activity, "未找到小说内容，请返回后重新进入阅读页")
@@ -245,7 +265,7 @@ class NovelSaveFeature : ConfigurableFeature(
                         toast(activity, "未读取到小说内容，请等页面加载完成后再试")
                         return@evaluateJavascript
                     }
-                    startSave(activity, id, blocks, asPdf)
+                    startSave(activity, id, blocks, asPdf, translated)
                 } catch (t: Throwable) {
                     ModuleLog.w(displayName, "parse extracted content failed", t)
                     toast(activity, "解析小说内容失败：${t.message ?: t.javaClass.simpleName}")
@@ -257,8 +277,8 @@ class NovelSaveFeature : ConfigurableFeature(
         }
     }
 
-    private fun startSave(activity: Activity, id: Long, blocks: List<NovelBlock>, asPdf: Boolean) {
-        toast(activity, "正在生成${if (asPdf) " PDF" else " TXT"}…")
+    private fun startSave(activity: Activity, id: Long, blocks: List<NovelBlock>, asPdf: Boolean, translated: Boolean) {
+        toast(activity, if (translated) "正在翻译小说用于保存…" else "正在生成${if (asPdf) " PDF" else " TXT"}…")
         val appContext = activity.applicationContext
         val snapshot = WorkContext.current?.takeIf { it.id == id }
         val title = snapshot?.title?.takeIf { it.isNotBlank() } ?: "novel_$id"
@@ -267,7 +287,12 @@ class NovelSaveFeature : ConfigurableFeature(
             var result: String? = null
             var error: String? = null
             try {
-                result = save(appContext, id, title, author, blocks, asPdf)
+                val outputBlocks = if (translated) {
+                    NovelText.toBlocks(NovelTranslation.translate(ConfigStoreRegistry.store, blocks) { done, total ->
+                        runOnUi(activity) { toast(activity, "正在翻译小说用于保存… ($done/$total)") }
+                    })
+                } else blocks
+                result = save(appContext, id, title, author, outputBlocks, asPdf, translated)
                 ModuleLog.i(displayName, "novel saved id=$id pdf=$asPdf file=$result")
             } catch (t: Throwable) {
                 error = t.message ?: t.javaClass.simpleName
@@ -296,7 +321,8 @@ class NovelSaveFeature : ConfigurableFeature(
         title: String,
         author: String,
         blocks: List<NovelBlock>,
-        asPdf: Boolean
+        asPdf: Boolean,
+        translated: Boolean
     ): String {
         val store = ConfigStoreRegistry.store
         val treeUriText = store.get(ConfigKeys.NOVEL_SAVE_FOLDER_URI)
@@ -304,7 +330,8 @@ class NovelSaveFeature : ConfigurableFeature(
         val treeUri = Uri.parse(treeUriText)
 
         val sourceUrl = "https://www.pixiv.net/novel/show.php?id=$id"
-        val fileName = "小说_${NovelMarkers.safeFileName(title, "novel_$id")}_$id"
+        val suffix = if (translated) "_译文_${Translator.targetOf(store).code}" else ""
+        val fileName = "小说_${NovelMarkers.safeFileName(title, "novel_$id")}_$id$suffix"
 
         if (asPdf) {
             val labels = NovelMarkers.imageLabels(blocks)

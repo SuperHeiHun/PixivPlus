@@ -170,6 +170,17 @@ object NovelText {
 
     private const val BLANK_DIV = "<div style=\"height:0.9em\"></div>"
 
+    /** 译文行转回导出块，沿用 TXT/PDF 的配图与章节导出能力。 */
+    fun toBlocks(lines: List<Line>): List<NovelBlock> = lines.map { line ->
+        when (line) {
+            is Line.Blank -> NovelBlock.Text("")
+            is Line.Text -> NovelBlock.Text(line.value)
+            is Line.Chapter -> NovelBlock.Chapter(line.value)
+            is Line.Picture -> NovelBlock.Picture(line.url)
+            is Line.PageBreak -> NovelBlock.PageBreak
+        }
+    }
+
     private fun escapeHtml(text: String): String = text
         .replace("&", "&amp;")
         .replace("<", "&lt;")

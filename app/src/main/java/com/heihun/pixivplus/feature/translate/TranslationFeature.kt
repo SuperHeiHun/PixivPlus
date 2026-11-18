@@ -28,6 +28,7 @@ import com.heihun.pixivplus.core.novel.NovelBlock
 import com.heihun.pixivplus.core.novel.NovelExtractor
 import com.heihun.pixivplus.core.translate.CaptionLinks
 import com.heihun.pixivplus.core.translate.NovelText
+import com.heihun.pixivplus.core.translate.NovelTranslation
 import com.heihun.pixivplus.core.translate.Translator
 import com.heihun.pixivplus.core.util.EntityReader
 import com.heihun.pixivplus.core.util.DetailPagerResolver
@@ -465,54 +466,24 @@ class TranslationFeature : ConfigurableFeature(
      * 连续文本行合并为组翻译后逐行回填；渲染为 HTML 走覆盖层显示。
      */
     private fun startNovelTranslation(activity: Activity, webView: WebView, blocks: List<NovelBlock>) {
-        val lines = NovelText.buildLines(blocks)
-        val groups = NovelText.group(lines)
-        if (groups.isEmpty()) {
-            translating.set(false)
-            toast(activity, "没有可翻译的文本")
-            return
-        }
         showProgress(activity, "正在翻译小说…")
         executor.execute {
             val store = ConfigStoreRegistry.store
-            var failure: String? = null
-            // 小型有界并发池：降低网络往返累计耗时，不无限并发冲击免费端点。
-            val workers = java.util.concurrent.Executors.newFixedThreadPool(minOf(3, groups.size)) { task ->
-                Thread(task, "plp-novel-translate").apply { isDaemon = true }
-            }
-            val completed = java.util.concurrent.ExecutorCompletionService<Pair<NovelText.Group, Translator.Result>>(workers)
-            try {
-                for (group in groups) {
-                    completed.submit(java.util.concurrent.Callable {
-                        group to Translator.translateChunk(store, group.text)
-                    })
+            val html = try {
+                val translated = NovelTranslation.translate(store, blocks) { done, total ->
+                    showProgress(activity, "正在翻译小说… ($done/$total)")
                 }
-                for (index in groups.indices) {
-                    val (group, result) = completed.take().get()
-                    if (result.text == null) {
-                        failure = result.error ?: "未知错误"
-                        break
-                    }
-                    val outLines = ArrayList(result.text.split('\n').map { it.trim() })
-                    while (outLines.isNotEmpty() && outLines.last().isEmpty()) outLines.removeAt(outLines.size - 1)
-                    group.outputs.addAll(if (outLines.isEmpty()) listOf("") else outLines)
-                    showProgress(activity, "正在翻译小说… (${index + 1}/${groups.size})")
-                }
+                NovelText.toHtml(translated)
             } catch (t: Exception) {
-                failure = "翻译任务失败：${t.javaClass.simpleName}"
                 ModuleLog.w(displayName, "novel translation failed", t)
-            } finally {
-                workers.shutdownNow()
-            }
-            hideProgress()
-            if (failure != null) {
                 runOnUi(activity) {
                     translating.set(false)
-                    toast(activity, "翻译失败：$failure")
+                    toast(activity, "翻译失败：${t.message ?: t.javaClass.simpleName}")
                 }
                 return@execute
+            } finally {
+                hideProgress()
             }
-            val html = NovelText.toHtml(NovelText.render(lines, groups))
             runOnUi(activity) {
                 translating.set(false)
                 try {

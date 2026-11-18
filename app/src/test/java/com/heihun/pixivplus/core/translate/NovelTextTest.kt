@@ -10,6 +10,19 @@ class NovelTextTest {
     private fun text(value: String) = NovelBlock.Text(value)
 
     @Test
+    fun `translated export retains chapters blanks images and pages`() {
+        val blocks = NovelText.toBlocks(listOf(
+            NovelText.Line.Chapter("译文章节"), NovelText.Line.Text("译文正文"),
+            NovelText.Line.Blank, NovelText.Line.Picture("https://example.com/i.jpg"),
+            NovelText.Line.PageBreak
+        ))
+        assertEquals(listOf(
+            NovelBlock.Chapter("译文章节"), text("译文正文"), text(""),
+            NovelBlock.Picture("https://example.com/i.jpg"), NovelBlock.PageBreak
+        ), blocks)
+    }
+
+    @Test
     fun `many short paragraphs use one request and retain local blanks`() {
         val blocks = (1..100).flatMap { listOf(text("段落$it"), text("")) }
         val lines = NovelText.buildLines(blocks)
