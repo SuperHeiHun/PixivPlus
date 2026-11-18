@@ -27,15 +27,16 @@ object MediaRepository {
             // Jadx 会把混淆 getter 显示为易读名称；运行时优先读取真实字段。
             val pages = (ReflectUtil.readField(entity, "metaPages") as? List<*>)?.map { page ->
                 val urls = ReflectUtil.readField(page, "imageUrls")
-                ReflectUtil.readField(urls, "original") as? String
+                (ReflectUtil.readField(urls, "original") as? String) to previewOf(urls)
             }.orEmpty()
             if (count == 1) {
                 val single = ReflectUtil.readField(entity, "metaSinglePage")
                 val original = (ReflectUtil.readField(single, "originalImageUrl") as? String)?.takeIf { it.isNotBlank() }
-                    ?: pages.firstOrNull()
-                if (!original.isNullOrBlank()) return listOf(OriginalImage(1, MediaModels.requireImageUrl(original)))
-            } else if (count in 2..1000 && pages.size == count && pages.all { !it.isNullOrBlank() }) {
-                return pages.mapIndexed { index, url -> OriginalImage(index + 1, MediaModels.requireImageUrl(url!!)) }
+                    ?: pages.firstOrNull()?.first
+                val preview = previewOf(ReflectUtil.readField(entity, "imageUrls")) ?: pages.firstOrNull()?.second
+                if (!original.isNullOrBlank()) return listOf(OriginalImage(1, MediaModels.requireImageUrl(original), preview))
+            } else if (count in 2..1000 && pages.size == count && pages.all { !it.first.isNullOrBlank() }) {
+                return pages.mapIndexed { index, urls -> OriginalImage(index + 1, MediaModels.requireImageUrl(urls.first!!), urls.second) }
             }
         }
         return MediaModels.originals(api(store, "/v1/illust/detail?illust_id=$id"))
@@ -43,6 +44,10 @@ object MediaRepository {
 
     fun ugoira(store: ConfigStore, id: Long): UgoiraMetadata =
         MediaModels.ugoira(api(store, "/v1/ugoira/metadata?illust_id=$id"))
+
+    private fun previewOf(urls: Any?): String? =
+        (ReflectUtil.readField(urls, "medium") as? String)?.takeIf { it.isNotBlank() }
+            ?: (ReflectUtil.readField(urls, "large") as? String)?.takeIf { it.isNotBlank() }
 
     private fun api(store: ConfigStore, path: String): JSONObject {
         val token = ApiHooks.authorizationToken()

@@ -3,7 +3,7 @@ package com.heihun.pixivplus.core.media
 import org.json.JSONObject
 import java.net.URI
 
-data class OriginalImage(val page: Int, val url: String) {
+data class OriginalImage(val page: Int, val url: String, val previewUrl: String? = null) {
     val fileName: String get() = URI(url).path.substringAfterLast('/')
     val mime: String get() = when (fileName.substringAfterLast('.').lowercase()) {
         "png" -> "image/png"
@@ -61,15 +61,19 @@ object MediaModels {
             val single = illust.optJSONObject("meta_single_page")?.optString("original_image_url").orEmpty()
             val url = single.ifEmpty { pages?.optJSONObject(0)?.optJSONObject("image_urls")?.optString("original").orEmpty() }
             require(url.isNotBlank()) { "未获取到原图地址，请等作品加载后重试" }
-            return listOf(OriginalImage(1, requireImageUrl(url)))
+            val preview = preview(illust.optJSONObject("image_urls")) ?: preview(pages?.optJSONObject(0)?.optJSONObject("image_urls"))
+            return listOf(OriginalImage(1, requireImageUrl(url), preview))
         }
         require(pages != null && pages.length() == count) { "原图分页数据不完整" }
         return (0 until count).map { page ->
             val url = pages!!.optJSONObject(page)?.optJSONObject("image_urls")?.optString("original").orEmpty()
             require(url.isNotBlank()) { "第 ${page + 1} 页缺少原图地址" }
-            OriginalImage(page + 1, requireImageUrl(url))
+            OriginalImage(page + 1, requireImageUrl(url), preview(pages.optJSONObject(page)?.optJSONObject("image_urls")))
         }
     }
+
+    private fun preview(urls: JSONObject?): String? =
+        urls?.optString("medium")?.takeIf { it.isNotBlank() } ?: urls?.optString("large")?.takeIf { it.isNotBlank() }
 
     fun ugoira(json: JSONObject): UgoiraMetadata {
         val metadata = json.optJSONObject("ugoira_metadata") ?: throw IllegalArgumentException("动图数据缺失")

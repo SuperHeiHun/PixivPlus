@@ -23,7 +23,7 @@ import com.heihun.pixivplus.feature.ConfigurableFeature
 import com.heihun.pixivplus.ui.ActivityResultBridge
 import com.heihun.pixivplus.ui.panel.ChoiceDialog
 import com.heihun.pixivplus.ui.panel.ConfirmDialog
-import com.heihun.pixivplus.ui.panel.PageSelectionDialog
+import com.heihun.pixivplus.ui.panel.ImageSelectionDialog
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import java.lang.reflect.Method
@@ -136,9 +136,9 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
             val store = ConfigStoreRegistry.store
             MediaRepository.info(store, id, entity) to MediaRepository.originals(store, id, entity)
         }) { (info, images) ->
-            ChoiceDialog.show(activity, "选择保存图片（共 ${images.size} 张）", listOf("全部保存", "自定义页码"), -1) { which ->
+            ChoiceDialog.show(activity, "选择保存图片（共 ${images.size} 张）", listOf("全部保存", "自定义选择（图片预览）"), -1) { which ->
                 if (which == 0) chooseFormat(activity, info, images)
-                else PageSelectionDialog.show(activity, images.size) { pages ->
+                else ImageSelectionDialog.show(activity, images, { it.previewUrl ?: it.url }) { pages ->
                     chooseFormat(activity, info, images.filter { it.page in pages })
                 }
             }
