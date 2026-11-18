@@ -9,6 +9,8 @@ import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.media.MediaExporter
 import com.heihun.pixivplus.core.media.MediaRepository
+import com.heihun.pixivplus.core.media.MediaInfo
+import com.heihun.pixivplus.core.media.MediaNames
 import com.heihun.pixivplus.core.media.OriginalImage
 import com.heihun.pixivplus.core.util.CurrentWorkHook
 import com.heihun.pixivplus.core.util.DetailPagerResolver
@@ -59,14 +61,14 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
             prepareOriginals(activity, idOf(entity), entity)
         }
         WorkPopupHooks.register(host, "保存 GIF", { isEnabled(ConfigStoreRegistry.store) && isUgoira(it) }) { activity, entity ->
-            prepareGif(activity, idOf(entity))
+            prepareGif(activity, idOf(entity), entity)
         }
         MenuHooks.installClickHook(host, methods, displayName) { item ->
             val activity = currentActivity
             if (activity == null || !isEnabled(ConfigStoreRegistry.store)) false
             else when (item.itemId) {
                 SAVE_ORIGINAL -> { val (id, entity) = currentWork(activity); prepareOriginals(activity, id, entity); true }
-                SAVE_GIF -> { val (id, _) = currentWork(activity); prepareGif(activity, id); true }
+                SAVE_GIF -> { val (id, entity) = currentWork(activity); prepareGif(activity, id, entity); true }
                 else -> false
             }
         }
@@ -130,21 +132,27 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
 
     private fun prepareOriginals(activity: Activity, id: Long, entity: Any?) {
         if (id <= 0) { toast(activity, "未获取到当前作品，请等详情加载后重试"); return }
-        runJob(activity, "正在读取原图信息…", { MediaRepository.originals(ConfigStoreRegistry.store, id, entity) }) { images ->
+        runJob(activity, "正在读取原图信息…", {
+            val store = ConfigStoreRegistry.store
+            MediaRepository.info(store, id, entity) to MediaRepository.originals(store, id, entity)
+        }) { (info, images) ->
             ChoiceDialog.show(activity, "选择保存图片（共 ${images.size} 张）", listOf("全部保存", "自定义页码"), -1) { which ->
-                if (which == 0) chooseFormat(activity, id, images)
+                if (which == 0) chooseFormat(activity, info, images)
                 else PageSelectionDialog.show(activity, images.size) { pages ->
-                    chooseFormat(activity, id, images.filter { it.page in pages })
+                    chooseFormat(activity, info, images.filter { it.page in pages })
                 }
             }
         }
     }
 
-    private fun chooseFormat(activity: Activity, id: Long, images: List<OriginalImage>) {
-        ChoiceDialog.show(activity, "保存格式（${images.size} 张）", listOf("分别保存原图", "打包为 ZIP"), -1) { which ->
+    private fun chooseFormat(activity: Activity, info: MediaInfo, images: List<OriginalImage>) {
+        ChoiceDialog.show(activity, "保存格式（${images.size} 张）", listOf("保存原图到作品文件夹", "打包为 ZIP"), -1) { which ->
+            val store = ConfigStoreRegistry.store
+            val stem = MediaNames.stem(info.author, info.title, info.id, store.get(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE))
+            val linksText = if (store.get(ConfigKeys.ILLUST_SAVE_INCLUDE_LINKS)) info.linksText() else null
             chooseFolder(activity) { folder ->
                 runJob(activity, "正在保存原图…", {
-                    MediaExporter.saveOriginals(activity.applicationContext, ConfigStoreRegistry.store, folder, id, images, which == 1) {
+                    MediaExporter.saveOriginals(activity.applicationContext, store, folder, stem, images, which == 1, linksText) {
                         progress(activity, it)
                     }
                 }) { names -> toast(activity, "已保存 ${names.size} 个文件：${names.first()}") }
@@ -152,12 +160,15 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
         }
     }
 
-    private fun prepareGif(activity: Activity, id: Long) {
+    private fun prepareGif(activity: Activity, id: Long, entity: Any?) {
         if (id <= 0) { toast(activity, "未获取到当前动图"); return }
         ConfirmDialog.show(activity, "保存 GIF", "将下载 ugoira 帧并转换为循环 GIF，保留每帧时长。\nGIF 使用 256 色，色彩会与原图有所差异。", "保存") {
             chooseFolder(activity) { folder ->
                 runJob(activity, "正在准备动图…", {
-                    MediaExporter.saveGif(activity.applicationContext, ConfigStoreRegistry.store, folder, id) { progress(activity, it) }
+                    val store = ConfigStoreRegistry.store
+                    val info = MediaRepository.info(store, id, entity)
+                    val stem = MediaNames.stem(info.author, info.title, id, store.get(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE))
+                    MediaExporter.saveGif(activity.applicationContext, store, folder, id, stem) { progress(activity, it) }
                 }) { name -> toast(activity, "已保存：$name") }
             }
         }

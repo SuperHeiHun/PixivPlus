@@ -406,6 +406,16 @@ object SettingsPanelBuilder {
 
     private fun buildIllustSavePage(activity: Activity, body: LinearLayout) {
         val card = UiKit.card(activity)
+        card.addView(UiKit.switchRow(activity, "附带作者和作品链接", "在 ZIP 或作品文件夹内附带作品信息.txt，默认关闭",
+            configValue(ConfigKeys.ILLUST_SAVE_INCLUDE_LINKS)) { checked -> putConfig(ConfigKeys.ILLUST_SAVE_INCLUDE_LINKS, checked) })
+        val namingRow = UiKit.infoRow(activity, "保存命名", configText(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE))
+        card.addView(namingRow)
+        card.addView(UiKit.filledButtonRow(activity, "自定义保存命名") {
+            MediaNameDialog.show(activity, configText(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE)) { template ->
+                putConfig(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE, template)
+                (namingRow.getChildAt(1) as? TextView)?.text = template
+            }
+        })
         fun folderLabel(): String {
             val raw = configText(ConfigKeys.ILLUST_SAVE_FOLDER_URI)
             if (raw.isBlank()) return "未选择（首次保存时提示选择）"
@@ -427,7 +437,8 @@ object SettingsPanelBuilder {
         })
         card.addView(UiKit.paragraph(activity,
             "详情页顶部菜单或作品操作弹窗中选择「保存原图 / ZIP」，可保存全部图片，" +
-                "或输入页码（例如 1,3,5-8）。原图不压缩，ZIP 保留原图文件。\n\n" +
+                "或输入页码（例如 1,3,5-8）。原图不压缩，ZIP 保留原图文件。" +
+                "默认按作者_标题命名；不打包时创建作品文件夹，图片追加从 1 开始的页码。\n\n" +
                 "ugoira 动图另有「保存 GIF」，按帧时长循环播放。GIF 使用 256 色，色彩会有差异；" +
                 "最多支持 2000 帧、单帧 400 万像素。保存原图只保存动图的静态原图。\n\n" +
                 "图片与动图下载沿用模块代理。保存位置仅保留在本机，不写入备份。"))

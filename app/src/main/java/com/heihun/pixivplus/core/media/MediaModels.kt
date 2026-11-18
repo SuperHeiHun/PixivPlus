@@ -16,6 +16,15 @@ data class OriginalImage(val page: Int, val url: String) {
 data class UgoiraFrame(val file: String, val delayMs: Int)
 data class UgoiraMetadata(val zipUrl: String, val frames: List<UgoiraFrame>)
 
+data class MediaInfo(val id: Long, val author: String?, val title: String?, val authorId: Long?) {
+    fun linksText(): String = buildString {
+        append("作者：").append(author.orEmpty()).append('\n')
+        append("作者链接：").append(authorId?.takeIf { it > 0 }?.let { "https://www.pixiv.net/users/$it" } ?: "未获取到").append('\n')
+        append("标题：").append(title.orEmpty()).append('\n')
+        append("作品链接：https://www.pixiv.net/artworks/").append(id).append('\n')
+    }
+}
+
 object MediaModels {
     /** 仅接受 Pixiv 图片服务器的 HTTPS 原图 / 动图地址。 */
     fun requireImageUrl(value: String): String {

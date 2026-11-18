@@ -11,6 +11,16 @@ import java.net.URL
 
 /** 原图地址只读取 original 字段，缺失时借用宿主登录态请求详情，不猜测缩略图路径。 */
 object MediaRepository {
+    fun info(store: ConfigStore, id: Long, entity: Any?): MediaInfo {
+        val author = entity?.let { EntityReader.authorName(it) }
+        val title = entity?.let { EntityReader.title(it) }
+        val authorId = entity?.let { EntityReader.authorId(it) }
+        if (!author.isNullOrBlank() && !title.isNullOrBlank() && authorId != null && authorId > 0) return MediaInfo(id, author, title, authorId)
+        val illust = api(store, "/v1/illust/detail?illust_id=$id").getJSONObject("illust")
+        val user = illust.optJSONObject("user")
+        return MediaInfo(id, user?.optString("name"), illust.optString("title"), user?.optLong("id")?.takeIf { it > 0 })
+    }
+
     fun originals(store: ConfigStore, id: Long, entity: Any?): List<OriginalImage> {
         if (entity != null) {
             val count = EntityReader.pageCount(entity)

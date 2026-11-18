@@ -56,6 +56,8 @@ object ConfigKeys {
     /** 插画原图 / ZIP 与 ugoira GIF 保存。 */
     val ILLUST_SAVE_ENABLED = ConfigKey("illust_save_enabled", true, { it.toString() }, { it.toBoolean() })
     val ILLUST_SAVE_FOLDER_URI = ConfigKey("illust_save_folder_uri", "", { it }, { it })
+    val ILLUST_SAVE_INCLUDE_LINKS = ConfigKey("illust_save_include_links", false, { it.toString() }, { it.toBoolean() })
+    val ILLUST_SAVE_NAME_TEMPLATE = ConfigKey("illust_save_name_template", "{author}_{title}", { it }, { it })
 
     /** 简介与小说翻译总开关（使用 Google 翻译免费接口，走模块代理设置）。 */
     val TRANSLATE_ENABLED = ConfigKey("translate_enabled", false, { it.toString() }, { it.toBoolean() })

@@ -10,8 +10,8 @@ import java.util.zip.ZipFile
 
 object MediaExporter {
     fun saveOriginals(
-        context: Context, store: ConfigStore, folder: Uri, id: Long,
-        images: List<OriginalImage>, asZip: Boolean, progress: (String) -> Unit
+        context: Context, store: ConfigStore, folder: Uri, stem: String,
+        images: List<OriginalImage>, asZip: Boolean, linksText: String?, progress: (String) -> Unit
     ): List<String> {
         require(images.isNotEmpty())
         val temp = taskDirectory(context)
@@ -27,18 +27,27 @@ object MediaExporter {
             }
             if (asZip) {
                 progress("正在打包 ZIP…")
-                val zip = File(temp, "${id}_原图.zip")
-                OriginalArchive.write(zip.outputStream().buffered(), id, images, files)
-                return listOf(write(context, folder, zip.name, "application/zip", zip))
+                val zip = File(temp, "$stem.zip")
+                OriginalArchive.write(zip.outputStream().buffered(), stem, images, files, linksText)
+                return listOf(write(context, parentOf(folder), zip.name, "application/zip", zip))
             }
-            return images.mapIndexed { index, image ->
+            val parent = parentOf(folder)
+            val directoryName = uniqueDirectoryName(context, folder, parent, stem)
+            val directory = DocumentsContract.createDocument(context.contentResolver, parent,
+                DocumentsContract.Document.MIME_TYPE_DIR, directoryName) ?: error("无法创建作品文件夹")
+            val saved = images.mapIndexed { index, image ->
                 progress("正在保存原图… (${index + 1}/${images.size})")
-                write(context, folder, "${id}_p${image.page - 1}.${image.fileName.substringAfterLast('.')}", image.mime, files[index])
+                "$directoryName/${write(context, directory, MediaNames.image(stem, image), image.mime, files[index])}"
             }
+            if (linksText != null) {
+                val info = File(temp, "作品信息.txt").apply { writeText(linksText, Charsets.UTF_8) }
+                write(context, directory, info.name, "text/plain", info)
+            }
+            return saved
         } finally { temp.deleteRecursively() } // 仅删除本次任务创建的随机临时目录。
     }
 
-    fun saveGif(context: Context, store: ConfigStore, folder: Uri, id: Long, progress: (String) -> Unit): String {
+    fun saveGif(context: Context, store: ConfigStore, folder: Uri, id: Long, stem: String, progress: (String) -> Unit): String {
         val temp = taskDirectory(context)
         try {
             progress("正在读取动图帧信息…")
@@ -46,7 +55,7 @@ object MediaExporter {
             val archive = File(temp, "frames.zip")
             progress("正在下载动图…")
             MediaRepository.download(store, metadata.zipUrl, archive, 128 * 1024 * 1024)
-            val gif = File(temp, "$id.gif")
+            val gif = File(temp, "$stem.gif")
             ZipFile(archive).use { zip ->
                 // 校验所有帧存在且大小受限。不解压路径，不按 ZIP 条目顺序猜测帧顺序。
                 var total = 0L
@@ -95,7 +104,7 @@ object MediaExporter {
                     require(gif.length() <= 512L * 1024 * 1024) { "GIF 体积过大（最多 512 MB）" }
                 }
             }
-            return write(context, folder, gif.name, "image/gif", gif)
+            return write(context, parentOf(folder), gif.name, "image/gif", gif)
         } finally { temp.deleteRecursively() }
     }
 
@@ -105,9 +114,24 @@ object MediaExporter {
         }
 
     /** 创建新文档，不覆盖同名文件；失败时清理本次创建的半成品。 */
-    private fun write(context: Context, tree: Uri, name: String, mime: String, file: File): String {
+    private fun parentOf(tree: Uri): Uri =
+        DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+
+    /** 新建独立作品目录，重复保存不复用或覆盖已有目录。 */
+    private fun uniqueDirectoryName(context: Context, tree: Uri, parent: Uri, stem: String): String {
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getDocumentId(parent))
+        val names = HashSet<String>()
+        context.contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
+            while (cursor.moveToNext()) names.add(cursor.getString(0))
+        }
+        var name = stem
+        var suffix = 2
+        while (name in names) name = "$stem (${suffix++})"
+        return name
+    }
+
+    private fun write(context: Context, parent: Uri, name: String, mime: String, file: File): String {
         val resolver = context.contentResolver
-        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val document = DocumentsContract.createDocument(resolver, parent, mime, name) ?: error("无法创建保存文件")
         try {
             (resolver.openOutputStream(document, "w") ?: error("无法写入保存文件")).use { output ->
