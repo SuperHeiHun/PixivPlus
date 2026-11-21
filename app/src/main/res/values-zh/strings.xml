@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="xposed_description">为 Pixiv 提供本地浏览历史、内容过滤、作品保存与翻译。模块入口位于 Pixiv 设置页。</string>
+</resources>

@@ -9,6 +9,9 @@ class ConfigKey<T>(
 
 object ConfigKeys {
 
+    /** 仅控制模块界面，不改变宿主配置或翻译目标语言。 */
+    val UI_LANGUAGE = ConfigKey("ui_language", "system", { it }, { it })
+
     val HISTORY_ENABLED = ConfigKey("history_enabled", true, { it.toString() }, { it.toBoolean() })
 
     val HISTORY_BRIDGE_ENABLED = ConfigKey("history_bridge_enabled", true, { it.toString() }, { it.toBoolean() })

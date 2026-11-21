@@ -5,6 +5,7 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.heihun.pixivplus.core.i18n.CommonText as C
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.ui.UiKit
 import com.heihun.pixivplus.ui.theme.Md3
@@ -18,7 +19,7 @@ object ConfirmDialog {
         activity: Activity,
         title: String,
         message: String,
-        confirmLabel: String = "确定",
+        confirmLabel: String = C.CONFIRM(),
         danger: Boolean = false,
         onConfirm: () -> Unit
     ) {
@@ -62,7 +63,7 @@ object ConfirmDialog {
                     UiKit.dp(activity, 12)
                 )
             }
-            val cancel = UiKit.textButton(activity, "取消").apply {
+            val cancel = UiKit.textButton(activity, C.CANCEL()).apply {
                 setOnClickListener { UiKit.dismissAnimated(dialog, root) }
             }
             val confirm = (if (danger) {

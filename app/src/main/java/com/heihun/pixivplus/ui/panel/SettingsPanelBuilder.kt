@@ -23,6 +23,11 @@ import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.Runtime
 import com.heihun.pixivplus.core.backup.WebDavBackup
 import com.heihun.pixivplus.core.config.ConfigKeys
+import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.I18n
+import com.heihun.pixivplus.core.i18n.SettingsText as S
+import com.heihun.pixivplus.core.i18n.Text
+import com.heihun.pixivplus.core.i18n.UiLanguage
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.net.FilterRules
 import com.heihun.pixivplus.core.net.ProxyMode
@@ -37,20 +42,23 @@ object SettingsPanelBuilder {
 
     private const val TAG = "SettingsPanel"
 
-    enum class Screen(val title: String, val subtitle: String) {
-        MAIN("PixivPlus", "本地增强设置"),
-        FEATURES("功能开关", "浏览历史、过滤、Premium、广告与简介修复"),
-        FILTERS("过滤规则", "关键词、标签与作者"),
-        NOVEL_SAVE("小说保存", "PDF / TXT 导出与保存位置"),
-        ILLUST_SAVE("插画与动图保存", "原图 / ZIP / GIF 与保存位置"),
-        TASKS("任务列表", "下载与翻译、下载历史及通知"),
-        CACHE("模块缓存", "下载断点、预览与翻译缓存清理"),
-        DRAWER_SLIM("侧边栏精简", "隐藏主抽屉菜单的低频项"),
-        PROXY("网络代理", "模块网页请求使用的代理"),
-        BACKUP("数据备份", "本地文件夹与 WebDAV"),
-        HISTORY("浏览历史", "记录策略与历史列表"),
-        DIAGNOSTICS("诊断", "运行状态与日志"),
-        ABOUT("关于", "版本与使用提示")
+    enum class Screen(private val titleText: Text, private val subtitleText: Text) {
+        MAIN(S.MODULE, S.HOME_SUBTITLE),
+        FEATURES(S.FEATURES, S.FEATURES_HINT),
+        FILTERS(S.FILTERS, S.FILTERS_HINT),
+        NOVEL_SAVE(S.NOVEL_SAVE, S.NOVEL_SAVE_HINT),
+        ILLUST_SAVE(S.ILLUST_SAVE, S.ILLUST_SAVE_HINT),
+        TASKS(S.TASKS, S.TASKS_HINT),
+        CACHE(S.CACHE, S.CACHE_HINT),
+        DRAWER_SLIM(S.DRAWER, S.DRAWER_HINT),
+        PROXY(S.PROXY, S.PROXY_HINT),
+        BACKUP(S.BACKUP, S.BACKUP_HINT),
+        HISTORY(S.HISTORY, S.HISTORY_HINT),
+        DIAGNOSTICS(S.DIAGNOSTICS, S.DIAGNOSTICS_HINT),
+        ABOUT(S.ABOUT, S.ABOUT_HINT);
+
+        val title get() = titleText()
+        val subtitle get() = subtitleText()
     }
 
     /** 直达二级页时返回箭头和系统返回键均关闭面板，回到宿主打开位置。 */
@@ -93,6 +101,7 @@ object SettingsPanelBuilder {
                         if (deepLinked) dialog.dismiss()
                         else showScreen(Screen.MAIN, fromBack = true)
                     },
+                    { showScreen(screen) },
                     scrollPositions[screen] ?: 0,
                     { activeScroll = it }
                 )
@@ -128,6 +137,7 @@ object SettingsPanelBuilder {
         goingBack: Boolean,
         open: (Screen) -> Unit,
         back: () -> Unit,
+        refresh: () -> Unit,
         restoreScrollY: Int,
         onScrollCreated: (ScrollView) -> Unit
     ) {
@@ -165,7 +175,7 @@ object SettingsPanelBuilder {
         UiKit.animateScreenIn(scroll, fromRight = !goingBack)
 
         when (screen) {
-            Screen.MAIN -> buildMainMenu(activity, body, open)
+            Screen.MAIN -> buildMainMenu(activity, body, open, refresh)
             Screen.FEATURES -> buildFeaturesPage(activity, body)
             Screen.FILTERS -> {
                 val card = UiKit.card(activity)
@@ -197,43 +207,55 @@ object SettingsPanelBuilder {
         }
     }
 
-    private fun buildMainMenu(activity: Activity, body: LinearLayout, open: (Screen) -> Unit) {
-        body.addView(
-            UiKit.paragraph(
-                activity,
-                "选择分类进入二级设置；返回主页时，右侧汇总信息会自动刷新。"
-            )
-        )
+    private fun buildMainMenu(activity: Activity, body: LinearLayout, open: (Screen) -> Unit, refresh: () -> Unit) {
+        val preference = I18n.preference()
+        val languageLabel = if (preference == UiLanguage.FOLLOW_HOST) S.FOLLOW_HOST_CURRENT(I18n.language().nativeName)
+            else preference.nativeName
+        val languageCard = UiKit.card(activity)
+        languageCard.addView(UiKit.selectRow(activity, S.LANGUAGE(), languageLabel) {
+            val languages = UiLanguage.entries
+            ChoiceDialog.show(activity, S.LANGUAGE(), languages.map {
+                if (it == UiLanguage.FOLLOW_HOST) S.FOLLOW_HOST() else it.nativeName
+            }, languages.indexOf(preference)) { index ->
+                val selected = languages[index]
+                if (selected != preference) {
+                    putConfig(ConfigKeys.UI_LANGUAGE, selected.tag)
+                    refresh()
+                }
+            }
+        })
+        body.addView(languageCard)
+        body.addView(UiKit.paragraph(activity, S.HOME_HINT()))
 
-        body.addView(UiKit.sectionTitle(activity, "功能"))
+        body.addView(UiKit.sectionTitle(activity, S.FEATURES_SECTION()))
         val features = UiKit.card(activity)
         addMenuRow(
             features,
             activity,
-            "功能开关",
-            "浏览历史、过滤、Premium、广告与简介修复",
+            S.FEATURES(),
+            S.FEATURES_HINT(),
             Screen.FEATURES,
             open
         )
-        addMenuRow(features, activity, "过滤规则", filterOverview(), Screen.FILTERS, open)
-        addMenuRow(features, activity, "浏览历史", historySummary(), Screen.HISTORY, open)
-        addMenuRow(features, activity, "小说保存", novelSaveSummary(), Screen.NOVEL_SAVE, open)
-        addMenuRow(features, activity, "插画与动图保存", if (configValue(ConfigKeys.ILLUST_SAVE_ENABLED)) "原图 / ZIP / GIF" else "已关闭", Screen.ILLUST_SAVE, open)
-        addMenuRow(features, activity, "任务列表", "下载与翻译、静默通知与下载历史", Screen.TASKS, open)
-        addMenuRow(features, activity, "侧边栏精简", drawerSlimSummary(), Screen.DRAWER_SLIM, open)
+        addMenuRow(features, activity, S.FILTERS(), filterOverview(), Screen.FILTERS, open)
+        addMenuRow(features, activity, S.HISTORY(), historySummary(), Screen.HISTORY, open)
+        addMenuRow(features, activity, S.NOVEL_SAVE(), novelSaveSummary(), Screen.NOVEL_SAVE, open)
+        addMenuRow(features, activity, S.ILLUST_SAVE(), if (configValue(ConfigKeys.ILLUST_SAVE_ENABLED)) S.ORIGINAL_FORMATS() else C.DISABLED(), Screen.ILLUST_SAVE, open)
+        addMenuRow(features, activity, S.TASKS(), S.TASKS_HINT(), Screen.TASKS, open)
+        addMenuRow(features, activity, S.DRAWER(), drawerSlimSummary(), Screen.DRAWER_SLIM, open)
         body.addView(features)
 
-        body.addView(UiKit.sectionTitle(activity, "网络与数据"))
+        body.addView(UiKit.sectionTitle(activity, S.NETWORK_SECTION()))
         val network = UiKit.card(activity)
-        addMenuRow(network, activity, "网络代理", proxySummary(), Screen.PROXY, open)
-        addMenuRow(network, activity, "数据备份", backupSummary(), Screen.BACKUP, open)
+        addMenuRow(network, activity, S.PROXY(), proxySummary(), Screen.PROXY, open)
+        addMenuRow(network, activity, S.BACKUP(), backupSummary(), Screen.BACKUP, open)
         body.addView(network)
 
-        body.addView(UiKit.sectionTitle(activity, "其他"))
+        body.addView(UiKit.sectionTitle(activity, S.OTHER_SECTION()))
         val others = UiKit.card(activity)
-        addMenuRow(others, activity, "模块缓存", "清理断点、预览和翻译缓存", Screen.CACHE, open)
-        addMenuRow(others, activity, "诊断", diagnosticsSummary(), Screen.DIAGNOSTICS, open)
-        addMenuRow(others, activity, "关于", aboutSummary(), Screen.ABOUT, open)
+        addMenuRow(others, activity, S.CACHE(), S.CACHE_HINT(), Screen.CACHE, open)
+        addMenuRow(others, activity, S.DIAGNOSTICS(), diagnosticsSummary(), Screen.DIAGNOSTICS, open)
+        addMenuRow(others, activity, S.ABOUT(), aboutSummary(), Screen.ABOUT, open)
         body.addView(others)
     }
 
@@ -255,89 +277,88 @@ object SettingsPanelBuilder {
         val card = UiKit.card(activity)
         addRow(card, UiKit.switchRow(
             activity,
-            "本地浏览历史",
-            "记录插画 / 漫画 / 小说的访问历史",
+            S.LOCAL_HISTORY(),
+            S.LOCAL_HISTORY_HINT(),
             configValue(ConfigKeys.HISTORY_ENABLED)
         ) { checked -> putConfig(ConfigKeys.HISTORY_ENABLED, checked) })
         addRow(card, UiKit.switchRow(
             activity,
-            "个人首页浏览记录联动",
-            "在原版「浏览记录」页面展示本地历史记录",
+            S.HISTORY_BRIDGE(),
+            S.HISTORY_BRIDGE_HINT(),
             configValue(ConfigKeys.HISTORY_BRIDGE_ENABLED)
         ) { checked -> putConfig(ConfigKeys.HISTORY_BRIDGE_ENABLED, checked) })
         addRow(card, UiKit.switchRow(
             activity,
-            "本地过滤",
-            "按关键词 / 标签 / 作者隐藏内容",
+            S.LOCAL_FILTER(),
+            S.LOCAL_FILTER_HINT(),
             configValue(ConfigKeys.FILTER_ENABLED)
         ) { checked -> putConfig(ConfigKeys.FILTER_ENABLED, checked) })
         addRow(card, UiKit.switchRow(
             activity,
-            "本地 Premium 覆盖",
-            "仅影响客户端界面显示，服务端权限不会解锁",
+            S.PREMIUM(),
+            S.PREMIUM_HINT(),
             configValue(ConfigKeys.PREMIUM_OVERRIDE)
         ) { checked -> putConfig(ConfigKeys.PREMIUM_OVERRIDE, checked) })
         addRow(card, UiKit.switchRow(
             activity,
-            "移除广告",
-            "屏蔽 ADG / AppLovin / Self-serve 广告请求与广告位",
+            S.REMOVE_ADS(),
+            S.REMOVE_ADS_HINT(),
             configValue(ConfigKeys.ADS_REMOVAL)
         ) { checked -> putConfig(ConfigKeys.ADS_REMOVAL, checked) })
         addRow(card, UiKit.switchRow(
             activity,
-            "插画简介修复",
-            "恢复因包含链接而被 Android 客户端隐藏的完整简介",
+            S.CAPTION_FIX(),
+            S.CAPTION_FIX_HINT(),
             configValue(ConfigKeys.CAPTION_FIX)
         ) { checked -> putConfig(ConfigKeys.CAPTION_FIX, checked) })
         addRow(card, UiKit.switchRow(
             activity,
-            "小说保存",
-            "在小说阅读页菜单中提供保存为 PDF / TXT",
+            S.NOVEL_SAVE(),
+            S.NOVEL_SAVE_TOGGLE(),
             configValue(ConfigKeys.NOVEL_SAVE_ENABLED)
         ) { checked -> putConfig(ConfigKeys.NOVEL_SAVE_ENABLED, checked) })
         addRow(card, UiKit.switchRow(
             activity,
-            "插画与动图保存",
-            "保存全部或自选原图、打包 ZIP，ugoira 转 GIF",
+            S.ILLUST_SAVE(),
+            S.ILLUST_SAVE_TOGGLE(),
             configValue(ConfigKeys.ILLUST_SAVE_ENABLED)
         ) { checked -> putConfig(ConfigKeys.ILLUST_SAVE_ENABLED, checked) })
         addRow(card, UiKit.switchRow(
             activity,
-            "简介与小说翻译",
-            "详情页菜单翻译简介，小说页菜单整篇翻译正文",
+            S.TRANSLATE(),
+            S.TRANSLATE_HINT(),
             configValue(ConfigKeys.TRANSLATE_ENABLED),
-            actionLabel = "目标语言：${translateTargetLabel()} ›",
+            actionLabel = S.TARGET_LABEL(translateTargetLabel()),
             onAction = { entry ->
                 val targets = com.heihun.pixivplus.core.translate.Translator.TARGETS
                 val selected = targets.indexOfFirst { it.code == configText(ConfigKeys.TRANSLATE_TARGET) }
                 ChoiceDialog.show(
                     activity,
-                    "翻译目标语言",
+                    S.TRANSLATE_TARGET(),
                     targets.map { it.label },
                     if (selected >= 0) selected else 0
                 ) { index ->
                     putConfig(ConfigKeys.TRANSLATE_TARGET, targets[index].code)
-                    entry.text = "目标语言：${targets[index].label} ›"
+                    entry.text = S.TARGET_LABEL(targets[index].label)
                 }
             }
         ) { checked -> putConfig(ConfigKeys.TRANSLATE_ENABLED, checked) })
         addRow(card, UiKit.switchRow(
             activity,
-            "侧边栏精简",
-            "在主抽屉菜单末尾提供一键隐藏低频菜单项的按钮",
+            S.DRAWER(),
+            S.DRAWER_TOGGLE_HINT(),
             configValue(ConfigKeys.DRAWER_SLIM_ENABLED)
         ) { checked -> putConfig(ConfigKeys.DRAWER_SLIM_ENABLED, checked) })
         card.addView(UiKit.divider(activity, 16, 16))
         card.addView(UiKit.paragraph(
             activity,
-            "翻译使用 Google 翻译免费接口，请求沿用「网络代理」中的设置；" +
-                "译文会缓存在内存中，重复翻译不再请求网络。"
+            S.TRANSLATE_SERVICE()
         ))
         body.addView(card)
         body.addView(
             UiKit.paragraph(
                 activity,
-                "这些开关只影响本地模块行为；本地 Premium 覆盖不会解锁服务端限制功能。"
+                S.FEATURE_NOTE()
             )
         )
     }
@@ -346,29 +367,27 @@ object SettingsPanelBuilder {
         val card = UiKit.card(activity)
         addRow(card, UiKit.switchRow(
             activity,
-            "启用精简模式",
-            "开启后隐藏下方勾选的菜单项；关闭恢复全部",
+            S.SLIM_ENABLE(),
+            S.SLIM_ENABLE_HINT(),
             configValue(ConfigKeys.DRAWER_SLIM_ENABLED)
         ) { checked -> putConfig(ConfigKeys.DRAWER_SLIM_ENABLED, checked) })
         card.addView(UiKit.divider(activity, 16, 16))
         card.addView(UiKit.paragraph(
             activity,
-            "侧边栏（左滑抽屉菜单）末尾会有「精简侧边栏 / 恢复全部菜单」按钮，" +
-                "点击即可快速切换；这里勾选精简模式下要隐藏的菜单项。" +
-                "宿主会动态重建菜单，如个别条目未被隐藏，重启 Pixiv 后完全生效。"
+            S.SLIM_INSTRUCTIONS()
         ))
         body.addView(card)
 
         val itemsCard = UiKit.card(activity)
-        itemsCard.addView(UiKit.cardSectionTitle(activity, "精简模式下隐藏"))
+        itemsCard.addView(UiKit.cardSectionTitle(activity, S.SLIM_HIDE_TITLE()))
         var added = false
         for ((entryName, label) in com.heihun.pixivplus.feature.drawer.DrawerSlimFeature.DRAWER_ITEM_LABELS) {
             if (added) itemsCard.addView(UiKit.divider(activity, 12, 12))
             added = true
             itemsCard.addView(UiKit.switchRow(
                 activity,
-                label,
-                "精简模式下隐藏该项",
+                label(),
+                S.SLIM_HIDE_ITEM(),
                 drawerSlimItemHidden(entryName)
             ) { checked ->
                 setDrawerSlimItemHidden(entryName, checked)
@@ -377,7 +396,7 @@ object SettingsPanelBuilder {
         body.addView(itemsCard)
         body.addView(UiKit.paragraph(
             activity,
-            "「分组标题」也按普通项处理；隐藏某个分组的全部成员后，标题可以单独保留或隐藏。"
+            S.SLIM_GROUP_NOTE()
         ))
     }
 
@@ -410,16 +429,16 @@ object SettingsPanelBuilder {
             .get(ConfigKeys.DRAWER_SLIM_ITEMS)
             .split(",")
             .count { it.trim().isNotEmpty() }
-        return if (enabled) "精简模式开启 · 隐藏 $hiddenCount 项" else "精简模式关闭 · 已选 $hiddenCount 项"
+        return if (enabled) S.SLIM_ON_COUNT(hiddenCount) else S.SLIM_OFF_COUNT(hiddenCount)
     }
 
     private fun buildIllustSavePage(activity: Activity, body: LinearLayout) {
         val card = UiKit.card(activity)
-        card.addView(UiKit.switchRow(activity, "附带作者和作品链接", "在 ZIP 或作品文件夹内附带作品信息.txt，默认关闭",
+        card.addView(UiKit.switchRow(activity, S.INCLUDE_LINKS(), S.INCLUDE_LINKS_HINT(),
             configValue(ConfigKeys.ILLUST_SAVE_INCLUDE_LINKS)) { checked -> putConfig(ConfigKeys.ILLUST_SAVE_INCLUDE_LINKS, checked) })
-        val namingRow = UiKit.infoRow(activity, "保存命名", configText(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE))
+        val namingRow = UiKit.infoRow(activity, S.SAVE_NAME(), configText(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE))
         card.addView(namingRow)
-        card.addView(UiKit.filledButtonRow(activity, "自定义保存命名") {
+        card.addView(UiKit.filledButtonRow(activity, S.CUSTOM_SAVE_NAME()) {
             MediaNameDialog.show(activity, configText(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE)) { template ->
                 putConfig(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE, template)
                 (namingRow.getChildAt(1) as? TextView)?.text = template
@@ -427,45 +446,39 @@ object SettingsPanelBuilder {
         })
         fun folderLabel(): String {
             val raw = configText(ConfigKeys.ILLUST_SAVE_FOLDER_URI)
-            if (raw.isBlank()) return "未选择（首次保存时提示选择）"
+            if (raw.isBlank()) return C.FOLDER_FIRST_USE()
             return try {
                 com.heihun.pixivplus.core.backup.BackupManager.folderName(activity, android.net.Uri.parse(raw))
-                    ?: "无法读取（授权可能失效）"
-            } catch (_: Exception) { "无法读取（授权可能失效）" }
+                    ?: C.FOLDER_UNREADABLE()
+            } catch (_: Exception) { C.FOLDER_UNREADABLE() }
         }
-        val folderRow = UiKit.infoRow(activity, "保存位置", folderLabel())
+        val folderRow = UiKit.infoRow(activity, C.FOLDER(), folderLabel())
         card.addView(folderRow)
-        card.addView(UiKit.filledButtonRow(activity, "选择保存文件夹") {
+        card.addView(UiKit.filledButtonRow(activity, C.SELECT_FOLDER()) {
             ActivityResultBridge.pickFolder(activity) { resultActivity, uri ->
                 if (uri != null) {
                     putConfig(ConfigKeys.ILLUST_SAVE_FOLDER_URI, uri.toString())
                     (folderRow.getChildAt(1) as? TextView)?.text = folderLabel()
-                    Toast.makeText(resultActivity, "已选择保存位置", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(resultActivity, C.FOLDER_SELECTED(), Toast.LENGTH_SHORT).show()
                 }
             }
         })
-        card.addView(UiKit.paragraph(activity,
-            "详情页顶部菜单或作品操作弹窗中选择「保存原图 / ZIP」，可保存全部图片，" +
-                "或在缩略图预览中点选图片、输入页码（例如 1,3,5-8）。原图不压缩，ZIP 保留原图文件。" +
-                "默认按作者_标题命名；不打包时创建作品文件夹，图片追加从 1 开始的页码。\n\n" +
-                "ugoira 动图另有「保存 GIF」，按帧时长循环播放。GIF 使用 256 色，色彩会有差异；" +
-                "最多支持 2000 帧、单帧 400 万像素。保存原图只保存动图的静态原图。\n\n" +
-                "图片与动图下载沿用模块代理。保存位置仅保留在本机，不写入备份。"))
+        card.addView(UiKit.paragraph(activity, S.ILLUST_INSTRUCTIONS()))
         body.addView(card)
     }
 
     private fun buildNovelSavePage(activity: Activity, body: LinearLayout) {
         val card = UiKit.card(activity)
-        val folderRow = UiKit.infoRow(activity, "保存位置", novelSaveFolderLabel(activity))
+        val folderRow = UiKit.infoRow(activity, C.FOLDER(), novelSaveFolderLabel(activity))
         card.addView(folderRow)
-        card.addView(UiKit.filledButtonRow(activity, "选择保存文件夹") {
+        card.addView(UiKit.filledButtonRow(activity, C.SELECT_FOLDER()) {
             ActivityResultBridge.pickFolder(activity) { resultActivity, uri ->
                 if (uri == null) {
-                    Toast.makeText(resultActivity, "未选择文件夹", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(resultActivity, C.NO_FOLDER_SELECTED(), Toast.LENGTH_SHORT).show()
                 } else {
                     putConfig(ConfigKeys.NOVEL_SAVE_FOLDER_URI, uri.toString())
                     ModuleLog.i(TAG, "novel save folder selected: $uri")
-                    Toast.makeText(resultActivity, "已选择保存位置", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(resultActivity, C.FOLDER_SELECTED(), Toast.LENGTH_SHORT).show()
                     (folderRow.getChildAt(1) as? TextView)?.text = novelSaveFolderLabel(resultActivity)
                 }
             }
@@ -473,35 +486,31 @@ object SettingsPanelBuilder {
         card.addView(UiKit.divider(activity, 16, 16))
         card.addView(UiKit.paragraph(
             activity,
-            "在小说阅读页右上角菜单中点「保存为 PDF」或「保存为 TXT」。" +
-                "PDF 兼容带插图的作品（随作品上传的图片和引用的插画都会嵌入），" +
-                "TXT 只保留纯文本（插图位置以 [插图 N] 占位）。"
+            S.NOVEL_INSTRUCTIONS()
         ))
         card.addView(UiKit.divider(activity, 16, 16))
         card.addView(UiKit.paragraph(
             activity,
-            "首次保存时必须先选择保存位置；文件名格式为「小说_标题_作品ID.pdf / .txt」。" +
-                "保存位置只保留在本机，不写入备份。正文直接从阅读页提取，不额外请求网络；" +
-                "PDF 中的插图会按需下载（沿用代理设置）。"
+            S.NOVEL_STORAGE()
         ))
         body.addView(card)
     }
 
     private fun novelSaveFolderLabel(activity: Activity): String {
         val raw = configText(ConfigKeys.NOVEL_SAVE_FOLDER_URI)
-        if (raw.isBlank()) return "未选择（首次保存时提示选择）"
+        if (raw.isBlank()) return C.FOLDER_FIRST_USE()
         return try {
             com.heihun.pixivplus.core.backup.BackupManager.folderName(activity, android.net.Uri.parse(raw))
-                ?: "无法读取（授权可能失效）"
+                ?: C.FOLDER_UNREADABLE()
         } catch (_: Throwable) {
-            "无法读取（授权可能失效）"
+            C.FOLDER_UNREADABLE()
         }
     }
 
     private fun novelSaveSummary(): String {
         val enabled = configValue(ConfigKeys.NOVEL_SAVE_ENABLED)
-        val folder = if (configText(ConfigKeys.NOVEL_SAVE_FOLDER_URI).isBlank()) "未选位置" else "已选位置"
-        return if (enabled) "$folder · PDF / TXT" else "已关闭"
+        val folder = if (configText(ConfigKeys.NOVEL_SAVE_FOLDER_URI).isBlank()) S.FOLDER_MISSING_SHORT() else S.FOLDER_SET_SHORT()
+        return if (enabled) "$folder · PDF / TXT" else C.DISABLED()
     }
 
     private fun translateTargetLabel(): String {
@@ -514,14 +523,14 @@ object SettingsPanelBuilder {
         val card = UiKit.card(activity)
         addRow(card, UiKit.switchRow(
             activity,
-            "暂停记录历史",
-            "临时停止写入浏览历史",
+            S.HISTORY_PAUSE(),
+            S.HISTORY_PAUSE_HINT(),
             configValue(ConfigKeys.HISTORY_PAUSED)
         ) { checked -> putConfig(ConfigKeys.HISTORY_PAUSED, checked) })
         card.addView(UiKit.divider(activity, 16, 16))
         card.addView(UiKit.inputRow(
             activity,
-            "历史保留天数（0 = 永久）",
+            S.HISTORY_RETENTION(),
             configText(ConfigKeys.HISTORY_RETENTION_DAYS).ifEmpty { "30" },
             "30",
             numeric = true
@@ -541,32 +550,32 @@ object SettingsPanelBuilder {
         card.addView(
             UiKit.infoRow(
                 activity,
-                "模块版本",
+                S.MODULE_VERSION(),
                 "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
             )
         )
         card.addView(UiKit.divider(activity, 16, 16))
-        card.addView(UiKit.infoRow(activity, "构建时间", DiagnosticsPanel.moduleBuildLabel()))
+        card.addView(UiKit.infoRow(activity, S.BUILD_TIME(), DiagnosticsPanel.moduleBuildLabel()))
         card.addView(UiKit.divider(activity, 16, 16))
-        card.addView(UiKit.infoRow(activity, "数据存储", "宿主应用私有目录，不上传任何数据"))
+        card.addView(UiKit.infoRow(activity, S.DATA_STORAGE(), S.DATA_STORAGE_HINT()))
         card.addView(UiKit.divider(activity, 16, 16))
         card.addView(
             UiKit.infoRow(
                 activity,
-                "备份位置",
-                "本地文件夹由用户选择；WebDAV 目录可自定义"
+                S.BACKUP_LOCATION(),
+                S.BACKUP_LOCATION_HINT()
             )
         )
         card.addView(UiKit.divider(activity, 16, 16))
         card.addView(
             UiKit.infoRow(
                 activity,
-                "GitHub 仓库",
+                S.GITHUB(),
                 "https://github.com/SuperHeiHun/PixivPlus"
             )
         )
         card.addView(
-            UiKit.buttonRow(activity, "打开 GitHub 仓库") {
+            UiKit.buttonRow(activity, S.OPEN_GITHUB()) {
                 openUrl(activity, "https://github.com/SuperHeiHun/PixivPlus")
             }
         )
@@ -574,8 +583,7 @@ object SettingsPanelBuilder {
         body.addView(
             UiKit.paragraph(
                 activity,
-                "提示：本地 Premium 只改变本机界面判断，不会解锁服务端限制功能；" +
-                    "请仅在备用账号上测试。"
+                S.ABOUT_PREMIUM()
             )
         )
     }
@@ -585,7 +593,7 @@ object SettingsPanelBuilder {
             activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         } catch (t: Throwable) {
             ModuleLog.e(TAG, "open url failed", t)
-            Toast.makeText(activity, "无法打开浏览器", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, S.NO_BROWSER(), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -610,7 +618,7 @@ object SettingsPanelBuilder {
             setBackgroundColor(palette.surface)
         }
         if (onBack != null) {
-            header.addView(navigationButton(activity, "\u2190", "返回", onBack))
+            header.addView(navigationButton(activity, "\u2190", C.BACK(), onBack))
         }
         val texts = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -679,9 +687,9 @@ object SettingsPanelBuilder {
             filterRow(
                 activity,
                 card,
-                "标题 / 简介关键词",
+                S.FILTER_KEYWORDS(),
                 ConfigKeys.FILTER_KEYWORDS,
-                "例如：R-18, 关键词"
+                S.SAMPLE_KEYWORDS()
             )
         )
         addRow(
@@ -689,9 +697,9 @@ object SettingsPanelBuilder {
             filterRow(
                 activity,
                 card,
-                "标签",
+                C.TAGS(),
                 ConfigKeys.FILTER_TAGS,
-                "例如：原创, 舰娘"
+                S.SAMPLE_TAGS()
             )
         )
         addRow(
@@ -699,17 +707,17 @@ object SettingsPanelBuilder {
             filterRow(
                 activity,
                 card,
-                "作者",
+                C.AUTHORS(),
                 ConfigKeys.FILTER_AUTHORS,
-                "例如：12345678（UID）, 画师名, account"
+                S.SAMPLE_CREATORS()
             )
         )
         addRow(
             card,
             UiKit.switchRow(
                 activity,
-                "区分大小写",
-                "关闭时忽略英文大小写",
+                S.CASE_SENSITIVE(),
+                S.CASE_SENSITIVE_HINT(),
                 configValue(ConfigKeys.FILTER_CASE_SENSITIVE)
             ) { checked -> putConfig(ConfigKeys.FILTER_CASE_SENSITIVE, checked) }
         )
@@ -734,9 +742,9 @@ object SettingsPanelBuilder {
     private fun filterSummary(raw: String): String {
         val rules = FilterRules.parse(raw)
         return when {
-            rules.isEmpty() -> "未设置"
+            rules.isEmpty() -> C.NOT_SET()
             rules.size == 1 -> rules.first()
-            else -> "${rules.size} 条规则"
+            else -> S.RULES_COUNT(rules.size)
         }
     }
 
@@ -746,48 +754,48 @@ object SettingsPanelBuilder {
         val authors = FilterRules.parse(configText(ConfigKeys.FILTER_AUTHORS)).size
         val total = keywords + tags + authors
         return if (total == 0) {
-            "未设置规则"
+            S.NO_RULES()
         } else {
-            "关键词 $keywords · 标签 $tags · 作者 $authors"
+            S.RULES_SUMMARY(keywords, tags, authors)
         }
     }
 
     private fun proxySummary(): String {
-        val store = Runtime.configOrNull() ?: return "配置未初始化"
+        val store = Runtime.configOrNull() ?: return C.CONFIG_NOT_READY()
         return try {
             val base = ProxySettings.describe(ProxySettings.current(store))
-            if (configValue(ConfigKeys.APP_PROXY_ENABLED)) "$base · 含 App" else base
+            if (configValue(ConfigKeys.APP_PROXY_ENABLED)) S.PROXY_WITH_APP(base) else base
         } catch (_: Throwable) {
-            "未知"
+            C.UNKNOWN()
         }
     }
 
     private fun backupSummary(): String {
         val folder = if (configText(ConfigKeys.BACKUP_FOLDER_URI).isBlank()) {
-            "本地未选择"
+            S.BACKUP_LOCAL_MISSING()
         } else {
-            "本地已选择"
+            S.BACKUP_LOCAL_SET()
         }
         val host = WebDavBackup.normalizeHost(configText(ConfigKeys.WEBDAV_HOST))
-        val remote = if (host.isNullOrBlank()) "WebDAV 未设置" else "WebDAV $host"
+        val remote = if (host.isNullOrBlank()) S.BACKUP_REMOTE_MISSING() else "WebDAV $host"
         return "$folder · $remote"
     }
 
     private fun historySummary(): String {
-        if (configValue(ConfigKeys.HISTORY_PAUSED)) return "已暂停记录"
+        if (configValue(ConfigKeys.HISTORY_PAUSED)) return S.HISTORY_PAUSED()
         val days = configText(ConfigKeys.HISTORY_RETENTION_DAYS).toIntOrNull() ?: 30
-        val retention = if (days <= 0) "永久保留" else "保留 $days 天"
+        val retention = if (days <= 0) S.KEEP_FOREVER() else S.KEEP_DAYS(days)
         val total = try {
             Runtime.historyDaoOrNull()?.count(null) ?: 0
         } catch (_: Throwable) {
             0
         }
-        return "$retention · $total 条记录"
+        return "$retention · ${S.RECORD_COUNT(total)}"
     }
 
     private fun diagnosticsSummary(): String {
-        val version = Host.versionName.ifBlank { "未知" }
-        return "宿主 $version (${Host.versionCode})"
+        val version = Host.versionName.ifBlank { C.UNKNOWN() }
+        return S.HOST_SUMMARY(version, Host.versionCode)
     }
 
     private fun aboutSummary(): String {
@@ -799,11 +807,11 @@ object SettingsPanelBuilder {
         val spec = store?.let { ProxySettings.current(it) } ?: ProxySpec(ProxyMode.SYSTEM, "", 0)
         card.removeAllViews()
 
-        card.addView(UiKit.selectRow(activity, "代理模式", spec.mode.label) {
+        card.addView(UiKit.selectRow(activity, S.PROXY_MODE(), spec.mode.label) {
             val modes = ProxyMode.entries
             ChoiceDialog.show(
                 activity,
-                "代理模式",
+                S.PROXY_MODE(),
                 modes.map { it.label },
                 modes.indexOf(spec.mode)
             ) { index ->
@@ -816,15 +824,15 @@ object SettingsPanelBuilder {
             card.addView(UiKit.divider(activity, 16, 16))
             card.addView(UiKit.inputRow(
                 activity,
-                "代理地址",
+                S.PROXY_ADDRESS(),
                 configText(ConfigKeys.PROXY_HOST),
-                "例如 192.168.10.12",
+                C.SAMPLE_ADDRESS(),
                 singleLine = true
             ) { value -> putConfig(ConfigKeys.PROXY_HOST, value) })
             card.addView(UiKit.divider(activity, 16, 16))
             card.addView(UiKit.inputRow(
                 activity,
-                "代理端口",
+                S.PROXY_PORT(),
                 configText(ConfigKeys.PROXY_PORT),
                 "7890",
                 numeric = true
@@ -835,17 +843,17 @@ object SettingsPanelBuilder {
                     card.addView(UiKit.divider(activity, 16, 16))
                     card.addView(UiKit.inputRow(
                         activity,
-                        "用户名（可选）",
+                        C.OPTIONAL_USERNAME(),
                         configText(ConfigKeys.PROXY_USERNAME),
-                        "留空表示免认证",
+                        C.BLANK_NO_AUTH(),
                         singleLine = true
                     ) { value -> putConfig(ConfigKeys.PROXY_USERNAME, value.trim()) })
                     card.addView(UiKit.divider(activity, 16, 16))
                     card.addView(UiKit.inputRow(
                         activity,
-                        "密码（可选）",
+                        C.OPTIONAL_PASSWORD(),
                         configText(ConfigKeys.PROXY_PASSWORD),
-                        "留空表示无密码",
+                        C.BLANK_NO_PASSWORD(),
                         password = true
                     ) { value -> putConfig(ConfigKeys.PROXY_PASSWORD, value) })
                 }
@@ -853,9 +861,9 @@ object SettingsPanelBuilder {
                     card.addView(UiKit.divider(activity, 16, 16))
                     card.addView(UiKit.inputRow(
                         activity,
-                        "用户 ID（可选）",
+                        S.SOCKS_USER_ID(),
                         configText(ConfigKeys.PROXY_USERNAME),
-                        "作为 SOCKS4 USERID 发送，可留空",
+                        S.SOCKS_USER_ID_HINT(),
                         singleLine = true
                     ) { value -> putConfig(ConfigKeys.PROXY_USERNAME, value.trim()) })
                 }
@@ -864,7 +872,7 @@ object SettingsPanelBuilder {
 
             card.addView(UiKit.paragraph(
                 activity,
-                "认证凭据以明文保存在 Pixiv 的私有配置中，模块网页请求与 App 代理共用。"
+                S.PROXY_CREDENTIALS()
             ))
         }
 
@@ -872,8 +880,8 @@ object SettingsPanelBuilder {
         card.addView(
             UiKit.switchRow(
                 activity,
-                "让 Pixiv App 也走此代理",
-                "接管宿主 App 的全部网络请求",
+                S.PROXY_APP(),
+                S.PROXY_APP_HINT(),
                 configValue(ConfigKeys.APP_PROXY_ENABLED)
             ) { checked -> putConfig(ConfigKeys.APP_PROXY_ENABLED, checked) }
         )
@@ -882,37 +890,37 @@ object SettingsPanelBuilder {
 
         card.addView(UiKit.divider(activity, 16, 16))
         card.addView(UiKit.paragraph(activity, proxyHint(spec.mode)))
-        card.addView(UiKit.filledButtonRow(activity, "测试代理连接") { testProxy(activity) })
+        card.addView(UiKit.filledButtonRow(activity, S.PROXY_TEST()) { testProxy(activity) })
     }
 
     private fun appProxyHint(mode: ProxyMode): String = when (mode) {
-        ProxyMode.SYSTEM -> "「跟随系统」时 App 请求本就使用系统代理，无需开启此开关。"
-        ProxyMode.DIRECT -> "开启后 App 将忽略系统代理，全部请求直连。"
-        ProxyMode.HTTP -> "开启后 App 的 OkHttp 与 HttpURLConnection 请求都会走 HTTP 代理；407 时自动附带 Basic 认证重试。"
-        ProxyMode.SOCKS4 -> "App 代理不支持 SOCKS4（Android 系统仅支持 SOCKS5），开启后 App 请求会失败。"
-        ProxyMode.SOCKS5 -> "开启后 App 的请求都会走 SOCKS5 代理；App 内暂不支持代理账号密码认证。"
+        ProxyMode.SYSTEM -> S.PROXY_APP_SYSTEM()
+        ProxyMode.DIRECT -> S.PROXY_APP_DIRECT()
+        ProxyMode.HTTP -> S.PROXY_APP_HTTP()
+        ProxyMode.SOCKS4 -> S.PROXY_APP_SOCKS4()
+        ProxyMode.SOCKS5 -> S.PROXY_APP_SOCKS5()
     }
 
     private fun proxyHint(mode: ProxyMode): String = when (mode) {
-        ProxyMode.SYSTEM -> "使用 Android 系统代理。模块的网页请求会自动沿用 Wi-Fi 或全局代理设置。"
-        ProxyMode.DIRECT -> "不使用代理，模块的网页请求直接连接。"
-        ProxyMode.HTTP -> "HTTP / HTTPS 代理：HTTP 请求直接转发，HTTPS 请求通过 CONNECT 隧道；支持 HTTP Basic 认证。"
-        ProxyMode.SOCKS4 -> "SOCKS4 / SOCKS4a 代理：支持域名目标；认证方式为 USERID，不支持密码。"
-        ProxyMode.SOCKS5 -> "SOCKS5 代理：支持域名目标与 RFC 1929 用户名 / 密码认证。"
+        ProxyMode.SYSTEM -> S.PROXY_MODULE_SYSTEM()
+        ProxyMode.DIRECT -> S.PROXY_MODULE_DIRECT()
+        ProxyMode.HTTP -> S.PROXY_MODULE_HTTP()
+        ProxyMode.SOCKS4 -> S.PROXY_MODULE_SOCKS4()
+        ProxyMode.SOCKS5 -> S.PROXY_MODULE_SOCKS5()
     }
 
     private fun testProxy(activity: Activity) {
         val store = Runtime.configOrNull()
         if (store == null) {
-            Toast.makeText(activity, "配置尚未初始化", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, C.CONFIG_NOT_READY(), Toast.LENGTH_SHORT).show()
             return
         }
         val spec = ProxySettings.current(store)
         if (spec.mode.requiresEndpoint() && !spec.hasValidEndpoint()) {
-            Toast.makeText(activity, "请先填写有效的代理地址和端口", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, S.PROXY_NEED_ENDPOINT(), Toast.LENGTH_SHORT).show()
             return
         }
-        Toast.makeText(activity, "正在测试代理连接…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(activity, S.PROXY_TESTING(), Toast.LENGTH_SHORT).show()
         Thread({
             val result = ProxySettings.test(store)
             try {

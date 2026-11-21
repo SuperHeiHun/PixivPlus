@@ -1,11 +1,12 @@
 package com.heihun.pixivplus.feature.drawer
 
 import android.view.Menu
-import android.view.MenuItem
 import android.view.View
 import android.widget.Toast
 import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.config.ConfigKeys
+import com.heihun.pixivplus.core.i18n.DrawerText as D
+import com.heihun.pixivplus.core.i18n.SettingsText as S
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.core.util.DetailPagerResolver
@@ -41,27 +42,27 @@ class DrawerSlimFeature : ConfigurableFeature(
         /** 注入按钮的排序权重，确保排在菜单末尾。 */
         private const val TOGGLE_ORDER = 999
 
-        /** 全部已知侧边栏菜单项资源名 -> 中文标签（设置页展示用）。 */
-        val DRAWER_ITEM_LABELS: Map<String, String> = linkedMapOf(
-            "drawer_menu_home" to "主页",
-            "drawer_menu_new_works" to "最新",
-            "drawer_menu_search" to "搜索",
-            "drawer_menu_notification" to "通知",
-            "drawer_menu_upload" to "投稿作品",
-            "drawer_menu_works" to "你的作品",
-            "drawer_menu_collection" to "收藏",
-            "drawer_menu_browsing_history" to "浏览记录",
-            "drawer_menu_novel_marker" to "书签",
-            "drawer_menu_connections" to "「我的」分组标题",
-            "drawer_menu_following" to "关注",
-            "drawer_menu_follower" to "粉丝",
-            "drawer_menu_mypixiv" to "好P友",
-            "drawer_menu_others" to "「其他」分组标题",
-            "drawer_menu_about" to "关于本APP",
-            "drawer_menu_support" to "帮助与反馈",
-            "drawer_menu_setting" to "设置",
-            "drawer_menu_mute_setting" to "屏蔽设定",
-            TASK_ENTRY_NAME to "PixivPlus 任务列表"
+        /** 持久化使用宿主资源名，只有设置页的显示标签跟随语言。 */
+        internal val DRAWER_ITEM_LABELS = linkedMapOf(
+            "drawer_menu_home" to D.HOME,
+            "drawer_menu_new_works" to D.NEW_WORKS,
+            "drawer_menu_search" to D.SEARCH,
+            "drawer_menu_notification" to D.NOTIFICATIONS,
+            "drawer_menu_upload" to D.POST_WORK,
+            "drawer_menu_works" to D.YOUR_WORKS,
+            "drawer_menu_collection" to D.BOOKMARKS,
+            "drawer_menu_browsing_history" to S.HISTORY,
+            "drawer_menu_novel_marker" to D.NOVEL_MARKER,
+            "drawer_menu_connections" to D.CONNECTIONS,
+            "drawer_menu_following" to D.FOLLOWING,
+            "drawer_menu_follower" to D.FOLLOWERS,
+            "drawer_menu_mypixiv" to D.MY_PIXIV,
+            "drawer_menu_others" to D.OTHER_HEADING,
+            "drawer_menu_about" to D.ABOUT_PIXIV,
+            "drawer_menu_support" to D.SUPPORT,
+            "drawer_menu_setting" to D.SETTINGS,
+            "drawer_menu_mute_setting" to D.MUTE_SETTINGS,
+            TASK_ENTRY_NAME to D.TASKS_ENTRY
         )
     }
 
@@ -73,6 +74,7 @@ class DrawerSlimFeature : ConfigurableFeature(
     override fun hook(host: Host) {
         if (installed) return
         installed = true
+        ConfigStoreRegistry.store.addListener(ConfigKeys.UI_LANGUAGE) { applyToAll() }
         val clazz = ReflectUtil.loadClass(host.classLoader, "com.google.android.material.navigation.NavigationView")
         if (clazz == null) {
             ModuleLog.w(displayName, "NavigationView class not found, feature skipped")
@@ -116,7 +118,7 @@ class DrawerSlimFeature : ConfigurableFeature(
 
     override fun onConfigChanged(host: Host) {
         super.onConfigChanged(host)
-        ModuleLog.i(displayName, "侧边栏精简已${if (isEnabled(ConfigStoreRegistry.store)) "开启" else "关闭"}")
+        ModuleLog.i(displayName, "drawer slim enabled=${isEnabled(ConfigStoreRegistry.store)}")
         applyToAll()
     }
 
@@ -220,8 +222,14 @@ class DrawerSlimFeature : ConfigurableFeature(
 
     /** 注入「精简侧边栏」按钮（幂等，点击切换精简模式；order 放大保证排在菜单末尾）。 */
     private fun ensureTaskItem(view: View, menu: Menu) {
-        if (!ConfigStoreRegistry.store.get(ConfigKeys.TASK_LIST_ENABLED) || menu.findItem(TASK_ITEM_ID) != null) return
-        menu.add(0, TASK_ITEM_ID, 998, "PixivPlus 任务列表").apply {
+        if (!ConfigStoreRegistry.store.get(ConfigKeys.TASK_LIST_ENABLED)) return
+        val title = D.TASKS_ENTRY()
+        val existing = menu.findItem(TASK_ITEM_ID)
+        if (existing != null) {
+            if (existing.title?.toString() != title) existing.title = title
+            return
+        }
+        menu.add(0, TASK_ITEM_ID, 998, title).apply {
             setIcon(android.R.drawable.ic_menu_agenda)
             isCheckable = false
             setOnMenuItemClickListener {
@@ -235,7 +243,7 @@ class DrawerSlimFeature : ConfigurableFeature(
 
     private fun ensureToggleItem(menu: Menu, slim: Boolean) {
         val existing = menu.findItem(TOGGLE_ITEM_ID)
-        val title = if (slim) "恢复全部菜单" else "精简侧边栏"
+        val title = if (slim) D.RESTORE() else D.SIMPLIFY()
         if (existing != null) {
             if (existing.title?.toString() != title) existing.title = title
             return
@@ -265,8 +273,7 @@ class DrawerSlimFeature : ConfigurableFeature(
             val context = Host.context()
             Toast.makeText(
                 context,
-                if (newValue) "侧边栏已精简；重启 Pixiv 后完全生效，隐藏项可在 PixivPlus 设置中调整"
-                else "已恢复全部菜单；重启 Pixiv 后完全生效",
+                if (newValue) D.SIMPLIFIED() else D.RESTORED(),
                 Toast.LENGTH_LONG
             ).show()
         } catch (_: Throwable) {

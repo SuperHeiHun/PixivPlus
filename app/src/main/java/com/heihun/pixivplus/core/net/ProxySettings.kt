@@ -4,6 +4,7 @@ import android.provider.Settings
 import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.config.ConfigStore
+import com.heihun.pixivplus.core.i18n.SettingsText as S
 import com.heihun.pixivplus.core.log.ModuleLog
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
@@ -13,12 +14,18 @@ import java.net.URI
 import java.net.URL
 import java.util.Base64
 
-enum class ProxyMode(val storageValue: String, val label: String) {
-    SYSTEM("system", "跟随系统"),
-    DIRECT("direct", "直连"),
+enum class ProxyMode(val storageValue: String, private val protocolLabel: String = "") {
+    SYSTEM("system"),
+    DIRECT("direct"),
     HTTP("http", "HTTP / HTTPS"),
     SOCKS4("socks4", "SOCKS4"),
     SOCKS5("socks5", "SOCKS5");
+
+    val label: String get() = when (this) {
+        SYSTEM -> S.SYSTEM_PROXY()
+        DIRECT -> S.DIRECT()
+        else -> protocolLabel
+    }
 
     fun requiresEndpoint(): Boolean {
         return this == HTTP || this == SOCKS4 || this == SOCKS5
@@ -52,8 +59,7 @@ data class ProxySpec(
     }
 
     fun display(): String = when (mode) {
-        ProxyMode.SYSTEM -> "跟随系统"
-        ProxyMode.DIRECT -> "直连"
+        ProxyMode.SYSTEM, ProxyMode.DIRECT -> mode.label
         else -> "${mode.label} ${host.ifBlank { "-" }}:$port"
     }
 }
@@ -111,7 +117,7 @@ object ProxySettings {
     fun test(store: ConfigStore): ProxyTestResult {
         val spec = current(store)
         if (spec.mode.requiresEndpoint() && !spec.hasValidEndpoint()) {
-            return ProxyTestResult(false, "代理配置不完整，请填写地址和端口")
+            return ProxyTestResult(false, S.PROXY_NEED_ENDPOINT())
         }
         val started = System.currentTimeMillis()
         val response = ProxyHttp.get(
@@ -128,16 +134,16 @@ object ProxySettings {
         val elapsed = System.currentTimeMillis() - started
         if (response == null) {
             val detail = ProxyHttp.lastFailureReason()
-            val suffix = if (detail.isNullOrBlank()) "" else "：$detail"
-            return ProxyTestResult(false, "连接失败（${describe(spec)}，${elapsed} ms）$suffix")
+            val suffix = if (detail.isNullOrBlank()) "" else " — $detail"
+            return ProxyTestResult(false, S.PROXY_FAILED(describe(spec), elapsed, suffix))
         }
         if (response.code == 407) {
-            return ProxyTestResult(false, "HTTP 代理认证失败（407），请检查用户名和密码")
+            return ProxyTestResult(false, S.PROXY_AUTH_FAILED())
         }
         return if (response.code in 200..399) {
-            ProxyTestResult(true, "连接成功：HTTP ${response.code}，${elapsed} ms（${describe(spec)}）")
+            ProxyTestResult(true, S.PROXY_OK(response.code, elapsed, describe(spec)))
         } else {
-            ProxyTestResult(false, "已连接，但返回 HTTP ${response.code}，${elapsed} ms")
+            ProxyTestResult(false, S.PROXY_HTTP_ERROR(response.code, elapsed))
         }
     }
 

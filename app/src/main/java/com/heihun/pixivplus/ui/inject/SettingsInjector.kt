@@ -10,6 +10,7 @@ import android.widget.TextView
 import com.heihun.pixivplus.adapt.anchors.SettingsAnchors
 import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.config.ConfigKeys
+import com.heihun.pixivplus.core.i18n.DrawerText as D
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
@@ -63,7 +64,7 @@ object SettingsInjector {
             val row = buildEntryRow(
                 activity,
                 "PixivPlus",
-                "本地历史 / 过滤 / Premium / 去广告"
+                D.ENTRY_SUMMARY()
             ) { openPanel(it) }
             row.tag = ROW_TAG
             container.addView(
@@ -106,8 +107,8 @@ object SettingsInjector {
             container.removeAllViews()
             val row = buildEntryRow(
                 activity,
-                "PixivPlus 屏蔽项管理",
-                "关键词 / 标签 / 作者 屏蔽规则"
+                D.MUTE_ENTRY(),
+                D.MUTE_ENTRY_SUMMARY()
             ) { openFilterRules(it) }
             row.tag = MUTE_ROW_TAG
             container.addView(

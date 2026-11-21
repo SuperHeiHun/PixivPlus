@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.TextView
+import com.heihun.pixivplus.core.i18n.CommonText as C
 import com.heihun.pixivplus.ui.UiKit
 import com.heihun.pixivplus.ui.theme.Md3
 import com.heihun.pixivplus.ui.theme.Md3Colors
@@ -48,7 +49,7 @@ object ChoiceDialog {
                 typeface = Md3.medium
             })
             texts.addView(TextView(activity).apply {
-                text = "点按选择"
+                text = C.SELECT_OPTION()
                 textSize = 13f
                 setTextColor(palette.onSurfaceVariant)
                 setPadding(0, UiKit.dp(activity, 2), 0, 0)

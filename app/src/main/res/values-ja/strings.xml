@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="xposed_description">pixiv にローカル閲覧履歴、作品フィルター、作品の保存と翻訳を追加します。モジュールは pixiv の設定から開けます。</string>
+</resources>

@@ -545,7 +545,7 @@ object UiKit {
             layoutParams = LinearLayout.LayoutParams(dp(context, 48), dp(context, 48))
             isClickable = true
             isFocusable = true
-            contentDescription = "关闭"
+            contentDescription = com.heihun.pixivplus.core.i18n.CommonText.CLOSE()
             setOnClickListener { onClose() }
         }
     }
