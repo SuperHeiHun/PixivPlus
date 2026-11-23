@@ -129,7 +129,7 @@ object NovelMarkers {
                 is NovelBlock.Picture -> builder.append("[插图 ").append(imageLabel(blocks, block)).append("]\n")
             }
         }
-        return builder.toString().trimEnd() + "\n"
+        return builder.toString()
     }
 
     /** 插图序号（按出现顺序从 1 开始），用于 TXT 占位与 PDF 图注。 */

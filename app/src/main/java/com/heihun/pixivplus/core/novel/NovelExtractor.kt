@@ -8,7 +8,7 @@ import org.json.JSONObject
  *
  * 阅读页的正文已经由宿主渲染在 WebView 中，直接读取 DOM 不依赖额外
  * 网络请求，登录限定 / R-18 作品同样可用。提取结果 token：
- * `x` 文本节点、`h` 章节标题文本、`i` 图片、`n` 换行、`p` 分页（[newpage]）。
+   * `x` 文本节点、`h` 章节标题文本、`i` 图片、`n` 作者换行、`b` 布局边界、`p` 分页。
  */
 object NovelExtractor {
 
@@ -22,7 +22,7 @@ object NovelExtractor {
      * `<div id="text">` 中，分页为 `<div id="N" class="page">`，每行是
      * `<span id="lineN">` + `<br>`。只取已知正文容器 `#text`，缺失时返回空结果，
      * 不按高度猜测或退回 body，避免把评论等整页内容导出；容器存到 `window.__plpTarget`，供译文替换 /
-     * 还原使用。遍历时跳过隐藏元素、注音节点、按钮与短链接文本；
+     * 还原使用。遍历时跳过隐藏元素、注音节点与按钮，正文链接文字保留；
      * 标题元素（H1-H6）内的文本以 `h` token 输出用于章节排版；
      * 已显示译文时（存在包装层）改为提取原文包装层，保证可重复翻译。
      */
@@ -47,19 +47,33 @@ object NovelExtractor {
   var root=wrap||target;
   window.__plpTarget=target;
   var hdepth=0;
+  var seenPage=false;
+  function authoredWhitespace(node){
+    for(var el=node.parentNode;el;el=el.parentNode){
+      if(/^line\d+$/.test(el.id||''))return true;
+      try{if(window.getComputedStyle&&/^(pre|pre-wrap|pre-line|break-spaces)$/.test(window.getComputedStyle(el).whiteSpace))return true;}catch(e){}
+      if(el===root)break;
+    }
+    return false;
+  }
   function walk(node){
     var children=node.childNodes;
     for(var j=0;j<children.length;j++){
       var n=children[j];
       if(n.nodeType===3){
         var t=n.textContent;
-        if(t&&t.trim())out.push({t:hdepth>0?'h':'x',s:t});
+        if(t){
+          var preserve=authoredWhitespace(n);
+          // 模板缩进不属于正文；行节点内的空格、全角缩进和显式换行则原样保留。
+          if(!preserve&&/^[\t\r\n ]+$/.test(t)&&/[\r\n]/.test(t))continue;
+          if(!preserve)t=t.replace(/[\t\r\n ]+/g,' ');
+          out.push({t:hdepth>0?'h':'x',s:t});
+        }
       }else if(n.nodeType===1){
         var tag=n.tagName;
         if(excluded(n))continue;
         if(tag==='SCRIPT'||tag==='STYLE'||tag==='NOSCRIPT'||tag==='RT'||tag==='RP'||tag==='NAV'||tag==='HEADER'||tag==='FOOTER'||tag==='BUTTON'||tag==='INPUT'||tag==='SELECT'||tag==='OPTION')continue;
         if(!visible(n))continue;
-        if(tag==='A'&&(n.textContent||'').trim().length<=30)continue;
         if(tag==='IMG'){
           var s=n.currentSrc||n.getAttribute('src')||n.getAttribute('data-src')||'';
           if(s)out.push({t:'i',s:s});
@@ -67,15 +81,16 @@ object NovelExtractor {
         }
         if(tag==='BR'){out.push({t:'n'});continue;}
         if(tag.length===2&&tag.charAt(0)==='H'&&tag.charCodeAt(1)>=49&&tag.charCodeAt(1)<=54){
-          hdepth++;out.push({t:'n'});walk(n);hdepth--;out.push({t:'n'});continue;
+          hdepth++;out.push({t:'b'});walk(n);hdepth--;out.push({t:'b'});continue;
         }
         if(tag==='DIV'&&n.id&&!isNaN(Number(n.id))&&/\bpage\b/.test(n.className||'')){
-          out.push({t:'p'});walk(n);continue;
+          if(seenPage)out.push({t:'p'});
+          seenPage=true;walk(n);out.push({t:'b'});continue;
         }
         var block=(tag==='P'||tag==='DIV'||tag==='SECTION'||tag==='FIGURE'||tag==='LI'||tag==='BLOCKQUOTE');
-        if(block)out.push({t:'n'});
+        if(block)out.push({t:'b'});
         walk(n);
-        if(block)out.push({t:'n'});
+        if(block)out.push({t:'b'});
       }
     }
   }
@@ -150,12 +165,13 @@ object NovelExtractor {
         var suppressBlank = false
 
         fun flush() {
-            val text = line.toString().trim()
+            val text = line.toString()
             val heading = lineIsHeading
             line.setLength(0)
             lineIsHeading = false
+            if (heading && text.isBlank()) return
             when {
-                heading && text.isNotEmpty() -> {
+                heading && text.isNotBlank() -> {
                     suppressBlank = false
                     blocks.add(NovelBlock.Chapter(text))
                 }
@@ -173,34 +189,27 @@ object NovelExtractor {
             }
         }
 
-        fun dropTrailingBlanks() {
-            while (blocks.isNotEmpty() && blocks.last() == NovelBlock.Text("")) {
-                blocks.removeAt(blocks.size - 1)
-            }
-        }
-
         for (index in 0 until tokens.length()) {
             val token = tokens.optJSONObject(index) ?: continue
             when (val type = token.optString("t")) {
                 "x", "h" -> {
                     if (type == "h" && !lineIsHeading && line.isNotEmpty()) flush()
                     if (type == "h") lineIsHeading = true
-                    val parts = token.optString("s").split('\n')
+                    val parts = token.optString("s").replace("\r\n", "\n").replace('\r', '\n').split('\n')
                     for ((partIndex, part) in parts.withIndex()) {
                         if (partIndex > 0) flush()
                         line.append(part)
                     }
                 }
                 "n" -> flush()
+                "b" -> if (line.isNotEmpty() || lineIsHeading) flush()
                 "p" -> {
-                    flush()
-                    dropTrailingBlanks()
+                    if (line.isNotEmpty() || lineIsHeading) flush()
                     if (blocks.lastOrNull() != NovelBlock.PageBreak) blocks.add(NovelBlock.PageBreak)
                     suppressBlank = true
                 }
                 "i" -> {
-                    flush()
-                    dropTrailingBlanks()
+                    if (line.isNotEmpty() || lineIsHeading) flush()
                     val url = token.optString("s")
                     if (url.startsWith("http")) {
                         blocks.add(NovelBlock.Picture(url))
@@ -209,12 +218,12 @@ object NovelExtractor {
                 }
             }
         }
-        flush()
-        // 去掉首尾的空行 / 分页标记。
-        while (blocks.firstOrNull() == NovelBlock.Text("") || blocks.firstOrNull() is NovelBlock.PageBreak) {
+        if (line.isNotEmpty() || lineIsHeading) flush()
+        // 兼容旧提取器的首尾页容器标记，但不删除作者的首尾空行。
+        while (blocks.firstOrNull() is NovelBlock.PageBreak) {
             blocks.removeAt(0)
         }
-        while (blocks.lastOrNull() == NovelBlock.Text("") || blocks.lastOrNull() is NovelBlock.PageBreak) {
+        while (blocks.lastOrNull() is NovelBlock.PageBreak) {
             blocks.removeAt(blocks.size - 1)
         }
         return blocks

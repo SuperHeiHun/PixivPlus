@@ -17,6 +17,7 @@ class NovelExtractorTest {
     private fun x(text: String) = JSONObject().put("t", "x").put("s", text)
     private fun h(text: String) = JSONObject().put("t", "h").put("s", text)
     private fun n() = JSONObject().put("t", "n")
+    private fun b() = JSONObject().put("t", "b")
     private fun p() = JSONObject().put("t", "p")
     private fun i(url: String) = JSONObject().put("t", "i").put("s", url)
 
@@ -34,7 +35,7 @@ class NovelExtractorTest {
     @Test
     fun `heading token becomes chapter block`() {
         val blocks = NovelExtractor.blocksFromTokens(
-            tokens(n(), h("第一章"), n(), x("本文第一行"), n())
+            tokens(b(), h("第一章"), b(), x("本文第一行"), n())
         )
         assertEquals(2, blocks.size)
         assertEquals(NovelBlock.Chapter("第一章"), blocks[0])
@@ -62,12 +63,12 @@ class NovelExtractorTest {
     }
 
     @Test
-    fun `leading and trailing blanks are trimmed`() {
+    fun `authored leading and trailing blanks are retained`() {
         val blocks = NovelExtractor.blocksFromTokens(
             tokens(n(), n(), x("正文"), n(), n(), n())
         )
-        assertEquals(1, blocks.size)
-        assertEquals("正文", (blocks[0] as NovelBlock.Text).line)
+        assertEquals(listOf(NovelBlock.Text(""), NovelBlock.Text(""), NovelBlock.Text("正文"),
+            NovelBlock.Text(""), NovelBlock.Text("")), blocks)
     }
 
     @Test
@@ -101,8 +102,26 @@ class NovelExtractorTest {
 
     @Test
     fun `empty heading text is skipped`() {
-        val blocks = NovelExtractor.blocksFromTokens(tokens(h(""), n(), x("正文"), n()))
+        val blocks = NovelExtractor.blocksFromTokens(tokens(h(""), b(), x("正文"), n()))
         assertEquals(1, blocks.size)
         assertEquals("正文", (blocks[0] as NovelBlock.Text).line)
+    }
+
+    @Test fun `layout boundaries do not add blank paragraphs`() {
+        val blocks = NovelExtractor.blocksFromTokens(tokens(b(), b(), x("一"), n(), b(), b(), x("二"), b(), b()))
+        assertEquals(listOf(NovelBlock.Text("一"), NovelBlock.Text("二")), blocks)
+    }
+
+    @Test fun `indentation inline spaces and trailing spaces survive TXT export`() {
+        val blocks = NovelExtractor.blocksFromTokens(tokens(x("　　缩进"), x(" "), x("行尾  "), n(), x("  "), n()))
+        val text = NovelMarkers.toPlainText("t", "", "", blocks).substringAfter("导出：PixivPlus\n\n")
+        assertEquals("　　缩进 行尾  \n  \n", text)
+    }
+
+    @Test fun `blank lines before chapter and picture are not dropped`() {
+        val blocks = NovelExtractor.blocksFromTokens(tokens(x("前文"), n(), n(), b(), h("章"), b(),
+            n(), i("https://embed.example/i.jpg"), n(), n(), x("后文"), n()))
+        assertEquals(listOf(NovelBlock.Text("前文"), NovelBlock.Text(""), NovelBlock.Chapter("章"),
+            NovelBlock.Text(""), NovelBlock.Picture("https://embed.example/i.jpg"), NovelBlock.Text(""), NovelBlock.Text("后文")), blocks)
     }
 }

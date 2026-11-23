@@ -70,9 +70,30 @@ assert.deepEqual(result.tokens.filter(t => t.t === 'x').map(t => t.s), ['原文'
 const image = element('IMG');
 image.currentSrc = 'https://example.com/novel.jpg';
 result = extract(element('BODY', '', [element('DIV', 'text', [
-  element('DIV', '1', [element('H2', '', [text('章节')]), line('正文'), br(), image], 'page')
+   element('DIV', '1', [element('H2', '', [text('章节')]), line('正文'), br(), image], 'page'),
+   element('DIV', '2', [line('次页正文'), br()], 'page')
 ])]));
 assert.ok(result.tokens.some(t => t.t === 'p'));
 assert.ok(result.tokens.some(t => t.t === 'h' && t.s === '章节'));
 assert.ok(result.tokens.some(t => t.t === 'i' && t.s === image.currentSrc));
-console.log('NovelExtractor DOM fixtures: 5 passed');
+// Nested layout wrappers introduce soft boundaries, not authored blank lines.
+result = extract(element('BODY', '', [element('DIV', 'text', [
+  element('DIV', '', [element('P', '', [text('第一段')]), element('P', '', [text('第二段')])])
+])]));
+assert.equal(result.tokens.filter(t => t.t === 'n').length, 0);
+assert.deepEqual(result.tokens.filter(t => t.t === 'x').map(t => t.s), ['第一段', '第二段']);
+
+// Preserve ideographic/ASCII indentation, spaces between inline spans, and short links.
+result = extract(element('BODY', '', [element('DIV', 'text', [
+  line('　　缩进  '), text(' '), element('A', '', [text('短链接正文')]), br(), line('  '), br()
+])]));
+assert.deepEqual(result.tokens.filter(t => t.t === 'x').map(t => t.s), ['　　缩进  ', ' ', '短链接正文', '  ']);
+assert.equal(result.tokens.filter(t => t.t === 'n').length, 2);
+
+// Formatting newlines between page containers are not novel text.
+result = extract(element('BODY', '', [element('DIV', 'text', [text('\n  '),
+  element('DIV', '1', [line('正文'), br()], 'page'), text('\n')
+])]));
+assert.deepEqual(result.tokens.filter(t => t.t === 'x').map(t => t.s), ['正文']);
+assert.equal(result.tokens.filter(t => t.t === 'p').length, 0);
+console.log('NovelExtractor DOM fixtures: 8 passed');
