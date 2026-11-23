@@ -1,7 +1,7 @@
 ﻿# PixivPlus
 
 面向 Pixiv Android 客户端的 LSPosed / Xposed 模块，在本地提供过滤、历史、快捷屏蔽与界面增强能力。
-所有数据都保存在宿主应用的私有目录中，模块不上传任何信息。
+设置、历史与语言包保存在宿主应用的私有目录中；导出的作品默认保存到公共 `Download/PixivPlus`，也可选择其他目录。模块不会自动上传设置与历史；翻译和用户主动发起的 WebDAV 备份会访问对应服务。
 
 Telegram频道：<https://t.me/HeiHun_Sub>
 
@@ -10,7 +10,7 @@ Telegram频道：<https://t.me/HeiHun_Sub>
 | 项目 | 版本 |
 | --- | --- |
 | 宿主应用 | Pixiv Android 6.192.1（versionCode 67458，已实测） |
-| 模块版本 | 1.0.7 (8，开发中) |
+| 模块版本 | 1.0.7 (8) |
 | 系统要求 | Android 8.0（API 26）及以上 |
 | 框架要求 | LSPosed / Xposed，作用域需勾选「Pixiv」 |
 
