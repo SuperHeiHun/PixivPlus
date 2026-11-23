@@ -87,4 +87,29 @@ object TaskNotifications {
             shown.forEach { manager.cancel(it, 1) }; shown.clear()
         } else records.forEach(::show)
     }
+
+    /** 只替换本模块仍显示通知的打开入口，保留正文、取消按钮及结束通知的原过期时间。 */
+    @android.annotation.SuppressLint("NotificationPermission")
+    fun refreshContentIntents() {
+        if (shown.isEmpty()) return
+        try {
+            val context = Host.context() ?: return
+            if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val entry = TaskNavigation.contentIntent(context)
+            val now = System.currentTimeMillis()
+            for (status in manager.activeNotifications) {
+                val tag = status.tag ?: continue
+                if (status.id != 1 || tag !in shown) continue
+                val notification = status.notification
+                val builder = Notification.Builder.recoverBuilder(context, notification).setContentIntent(entry)
+                if (notification.timeoutAfter > 0) {
+                    val remaining = TaskEntryPolicy.remainingTimeout(status.postTime, notification.timeoutAfter, now)
+                    if (remaining <= 0) continue
+                    builder.setTimeoutAfter(remaining)
+                }
+                manager.notify(tag, 1, builder.build())
+            }
+        } catch (e: Exception) { ModuleLog.w("TaskNotifications", "notification entry refresh unavailable", e) }
+    }
 }
