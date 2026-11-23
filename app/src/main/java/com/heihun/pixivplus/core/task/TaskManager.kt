@@ -12,6 +12,10 @@ class TaskHandle internal constructor(initial: TaskRecord) {
         internal set
     val token = CancellationToken()
     internal var lastNotification = 0L
+    fun recordFiles(files: List<com.heihun.pixivplus.core.media.SavedFile>) = synchronized(lock) {
+        require(files.size <= TaskRecords.FILE_LIMIT && files.all { it.isValid() })
+        record = record.copy(files = files.toList())
+    }
     fun <T> execute(work: () -> T): T {
         TaskManager.running(this)
         try {
@@ -88,7 +92,8 @@ object TaskManager {
     internal fun finish(task: TaskHandle, state: TaskState, message: String) = synchronized(task.lock) {
         val cancelled = task.token.isCancelled
         task.record = task.record.copy(state = if (cancelled) TaskState.CANCELLED else state,
-            message = if (cancelled) TaskState.CANCELLED.label else message, finishedAt = System.currentTimeMillis())
+            message = if (cancelled) TaskState.CANCELLED.label else message, finishedAt = System.currentTimeMillis(),
+            files = if (!cancelled && state == TaskState.SUCCEEDED) task.record.files else emptyList())
         active.remove(task.record.id)
         persist(task.record)
         TaskNotifications.show(task.record)

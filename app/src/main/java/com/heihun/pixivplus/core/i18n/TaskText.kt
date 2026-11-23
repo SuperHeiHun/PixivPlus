@@ -1,6 +1,11 @@
 package com.heihun.pixivplus.core.i18n
 
 internal object TaskText {
+    val OPEN_FILE = Text("task.open_file")
+    val FILE_UNAVAILABLE = Text("task.file_unavailable")
+    val NO_FILE_VIEWER = Text("task.no_file_viewer")
+    val OPEN_FILE_FAILED = Text("task.open_file_failed")
+    val NO_RECORDED_FILES = Text("task.no_recorded_files")
     val NOTIFICATIONS = Text("task.notifications")
     val NOTIFICATIONS_HINT = Text("task.notifications_hint")
     val SIDEBAR = Text("task.sidebar")

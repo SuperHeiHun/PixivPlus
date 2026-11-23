@@ -48,10 +48,11 @@ object DownloadJobs {
                                 plan.format == DownloadFormat.ZIP, plan.linksText, directory)
                         }
                         // 成功后无需保留断点；历史的重新下载会重新获取地址并从头下载。
+                        task.recordFiles(saved)
                         directory.deleteRecursively()
                         saved
                     }
-                    activity.runOnUiThread { Toast.makeText(context, T.FILES_SAVED(result.size, result.first()), Toast.LENGTH_LONG).show() }
+                    activity.runOnUiThread { Toast.makeText(context, T.FILES_SAVED(result.size, result.first().name), Toast.LENGTH_LONG).show() }
                 } catch (t: Throwable) {
                     if (t !is Exception && t !is OutOfMemoryError) throw t
                     activity.runOnUiThread {

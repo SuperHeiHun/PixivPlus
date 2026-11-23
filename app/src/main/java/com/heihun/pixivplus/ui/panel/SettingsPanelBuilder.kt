@@ -24,6 +24,7 @@ import com.heihun.pixivplus.core.Runtime
 import com.heihun.pixivplus.core.backup.WebDavBackup
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.DownloadText as D
 import com.heihun.pixivplus.core.i18n.I18n
 import com.heihun.pixivplus.core.i18n.LanguageText as L
 import com.heihun.pixivplus.core.i18n.SettingsText as S
@@ -437,7 +438,7 @@ object SettingsPanelBuilder {
         })
         fun folderLabel(): String {
             val raw = configText(ConfigKeys.ILLUST_SAVE_FOLDER_URI)
-            if (raw.isBlank()) return C.FOLDER_FIRST_USE()
+            if (raw.isBlank()) return D.DEFAULT_LOCATION()
             return try {
                 com.heihun.pixivplus.core.backup.BackupManager.folderName(activity, android.net.Uri.parse(raw))
                     ?: C.FOLDER_UNREADABLE()
@@ -453,6 +454,10 @@ object SettingsPanelBuilder {
                     Toast.makeText(resultActivity, C.FOLDER_SELECTED(), Toast.LENGTH_SHORT).show()
                 }
             }
+        })
+        card.addView(UiKit.filledButtonRow(activity, D.RESET_LOCATION()) {
+            putConfig(ConfigKeys.ILLUST_SAVE_FOLDER_URI, "")
+            (folderRow.getChildAt(1) as? TextView)?.text = folderLabel()
         })
         card.addView(UiKit.paragraph(activity, S.ILLUST_INSTRUCTIONS()))
         body.addView(card)
@@ -474,6 +479,10 @@ object SettingsPanelBuilder {
                 }
             }
         })
+        card.addView(UiKit.filledButtonRow(activity, D.RESET_LOCATION()) {
+            putConfig(ConfigKeys.NOVEL_SAVE_FOLDER_URI, "")
+            (folderRow.getChildAt(1) as? TextView)?.text = novelSaveFolderLabel(activity)
+        })
         card.addView(UiKit.divider(activity, 16, 16))
         card.addView(UiKit.paragraph(
             activity,
@@ -489,7 +498,7 @@ object SettingsPanelBuilder {
 
     private fun novelSaveFolderLabel(activity: Activity): String {
         val raw = configText(ConfigKeys.NOVEL_SAVE_FOLDER_URI)
-        if (raw.isBlank()) return C.FOLDER_FIRST_USE()
+        if (raw.isBlank()) return D.DEFAULT_LOCATION()
         return try {
             com.heihun.pixivplus.core.backup.BackupManager.folderName(activity, android.net.Uri.parse(raw))
                 ?: C.FOLDER_UNREADABLE()
@@ -500,7 +509,7 @@ object SettingsPanelBuilder {
 
     private fun novelSaveSummary(): String {
         val enabled = configValue(ConfigKeys.NOVEL_SAVE_ENABLED)
-        val folder = if (configText(ConfigKeys.NOVEL_SAVE_FOLDER_URI).isBlank()) S.FOLDER_MISSING_SHORT() else S.FOLDER_SET_SHORT()
+        val folder = if (configText(ConfigKeys.NOVEL_SAVE_FOLDER_URI).isBlank()) D.DEFAULT_LOCATION() else S.FOLDER_SET_SHORT()
         return if (enabled) "$folder · PDF / TXT" else C.DISABLED()
     }
 

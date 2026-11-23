@@ -2,6 +2,7 @@ package com.heihun.pixivplus.core.task
 
 import com.heihun.pixivplus.core.i18n.TaskText as T
 import com.heihun.pixivplus.core.i18n.Text
+import com.heihun.pixivplus.core.media.SavedFile
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -16,7 +17,8 @@ data class TaskRecord(
     val id: String, val title: String, val kind: TaskKind, val state: TaskState = TaskState.QUEUED,
     val message: String = TaskState.QUEUED.label, val createdAt: Long = System.currentTimeMillis(),
     val finishedAt: Long = 0, val done: Int = 0, val total: Int = 0,
-    val workId: Long = 0, val workType: String = "ILLUST", val downloadPlan: String? = null
+    val workId: Long = 0, val workType: String = "ILLUST", val downloadPlan: String? = null,
+    val files: List<SavedFile> = emptyList()
 ) {
     /** 状态实时翻译；错误详情、作品名称和旧进度描述仍保留其原始文本。 */
     fun displayMessage(): String = when (state) {
@@ -29,12 +31,18 @@ data class TaskRecord(
 
 object TaskRecords {
     const val HISTORY_LIMIT = 100
+    const val FILE_LIMIT = 1001
     fun encode(records: List<TaskRecord>): String = JSONArray().apply {
         records.take(HISTORY_LIMIT).forEach { record -> put(JSONObject()
             .put("id", record.id).put("title", record.title).put("kind", record.kind.name)
             .put("state", record.state.name).put("message", record.message).put("created", record.createdAt)
             .put("finished", record.finishedAt).put("done", record.done).put("total", record.total)
-            .put("work", record.workId).put("work_type", record.workType).put("download_plan", record.downloadPlan)) }
+            .put("work", record.workId).put("work_type", record.workType).put("download_plan", record.downloadPlan)
+            .put("files", JSONArray().apply {
+                record.files.filter { it.isValid() }.take(FILE_LIMIT).forEach { file ->
+                    put(JSONObject().put("uri", file.uri).put("name", file.name).put("mime", file.mime))
+                }
+            })) }
     }.toString()
     fun decode(text: String): List<TaskRecord> = try {
         val array = JSONArray(text)
@@ -47,7 +55,13 @@ object TaskRecords {
                     if (state.terminal) item.optString("message") else TaskState.INTERRUPTED.label,
                     item.getLong("created"), item.optLong("finished"), item.optInt("done"), item.optInt("total"),
                     item.optLong("work"), item.optString("work_type", "ILLUST"),
-                    if (item.isNull("download_plan")) null else item.optString("download_plan").takeIf { it.isNotBlank() })
+                    if (item.isNull("download_plan")) null else item.optString("download_plan").takeIf { it.isNotBlank() },
+                    item.optJSONArray("files")?.let { files ->
+                        (0 until minOf(files.length(), FILE_LIMIT)).mapNotNull file@{ position ->
+                            val file = files.optJSONObject(position) ?: return@file null
+                            SavedFile(file.optString("uri"), file.optString("name"), file.optString("mime")).takeIf { it.isValid() }
+                        }
+                    }.orEmpty())
             } catch (_: Exception) { null }
         }
     } catch (_: Exception) { emptyList() }

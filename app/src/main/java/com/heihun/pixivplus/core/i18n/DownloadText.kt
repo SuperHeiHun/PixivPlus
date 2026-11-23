@@ -1,6 +1,9 @@
 package com.heihun.pixivplus.core.i18n
 
 internal object DownloadText {
+    val DEFAULT_LOCATION = Text("download.default_location")
+    val RESET_LOCATION = Text("download.reset_location")
+    val LEGACY_STORAGE_PERMISSION = Text("download.legacy_storage_permission")
     val BAD_URL = Text("download.bad_url")
     val BAD_IMAGE_NAME = Text("download.bad_image_name")
     val IMAGE_COUNT_LIMIT = Text("download.image_count_limit")

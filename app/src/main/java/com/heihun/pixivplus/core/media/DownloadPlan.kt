@@ -22,7 +22,8 @@ data class DownloadPlan(
                 if (json.isNull("links")) null else json.getString("links"), json.getString("cache"))
             require(plan.workId > 0 && plan.stem.isNotBlank() && plan.stem.toByteArray().size <= 200 &&
                 plan.stem.none { it == '/' || it == '\\' || it == '\u0000' } && plan.stem != "." && plan.stem != "..") { D.BAD_PLAN_NAME() }
-            require(plan.folder.startsWith("content://") && plan.cacheKey.matches(Regex("[a-fA-F0-9-]{36}"))) { D.BAD_PLAN_LOCATION() }
+            require((plan.folder.startsWith("content://") || plan.folder == OutputPolicy.DEFAULT_FOLDER) &&
+                plan.cacheKey.matches(Regex("[a-fA-F0-9-]{36}"))) { D.BAD_PLAN_LOCATION() }
             require(plan.pages.size <= 1000 && plan.pages.all { it in 1..1000 } && plan.pages.distinct().size == plan.pages.size) { D.BAD_PLAN_PAGES() }
             require(plan.format == DownloadFormat.GIF || plan.pages.isNotEmpty()) { D.NO_PLAN_PAGES() }
             return plan

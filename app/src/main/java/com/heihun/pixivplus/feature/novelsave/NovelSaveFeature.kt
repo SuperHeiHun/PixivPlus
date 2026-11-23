@@ -5,7 +5,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.provider.DocumentsContract
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -35,7 +34,6 @@ import com.heihun.pixivplus.core.util.FeatureMenuOrder
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.ConfigurableFeature
-import com.heihun.pixivplus.ui.ActivityResultBridge
 import com.heihun.pixivplus.ui.panel.ChoiceDialog
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -202,28 +200,6 @@ class NovelSaveFeature : ConfigurableFeature(
     }
 
     private fun chooseFolderAndSave(activity: Activity, id: Long, asPdf: Boolean, translated: Boolean) {
-        val folder = try {
-            ConfigStoreRegistry.store.get(ConfigKeys.NOVEL_SAVE_FOLDER_URI)
-        } catch (_: Throwable) {
-            ""
-        }
-        if (folder.isBlank()) {
-            toast(activity, W.FIRST_SAVE())
-            ActivityResultBridge.pickFolder(activity) { resultActivity, uri ->
-                if (uri == null) {
-                    toast(resultActivity, W.FOLDER_CANCELLED())
-                    return@pickFolder
-                }
-                try {
-                    ConfigStoreRegistry.store.put(ConfigKeys.NOVEL_SAVE_FOLDER_URI, uri.toString())
-                } catch (t: Throwable) {
-                    ModuleLog.w(displayName, "store save folder failed", t)
-                }
-                toast(resultActivity, C.FOLDER_SELECTED())
-                extractAndSave(resultActivity, id, asPdf, translated)
-            }
-            return
-        }
         extractAndSave(activity, id, asPdf, translated)
     }
 
@@ -292,7 +268,7 @@ class NovelSaveFeature : ConfigurableFeature(
         val author = snapshot?.authorName.orEmpty()
         val task = TaskManager.begin(TaskKind.DOWNLOAD, W.NOVEL_EXPORT(format, title), id, "NOVEL")
         Thread({
-            var result: String? = null
+            var result: com.heihun.pixivplus.core.media.SavedFile? = null
             var error: String? = null
             try {
                 result = task.execute {
@@ -302,7 +278,9 @@ class NovelSaveFeature : ConfigurableFeature(
                         })
                     } else blocks
                     TaskExecution.progress(W.GENERATE_NOVEL_EXPORT(format))
-                    save(appContext, id, title, author, outputBlocks, asPdf, translated)
+                    save(appContext, id, title, author, outputBlocks, asPdf, translated).also {
+                        task.recordFiles(listOf(it))
+                    }
                 }
                 ModuleLog.i(displayName, "novel saved id=$id pdf=$asPdf file=$result")
             } catch (t: Throwable) {
@@ -311,7 +289,7 @@ class NovelSaveFeature : ConfigurableFeature(
             }
             runOnUi(activity) {
                 if (result != null) {
-                    toast(activity, C.SAVED(result))
+                    toast(activity, C.SAVED(result!!.name))
                 } else {
                     toast(activity, C.SAVE_FAILED(error ?: C.UNKNOWN_ERROR()))
                 }
@@ -334,10 +312,9 @@ class NovelSaveFeature : ConfigurableFeature(
         blocks: List<NovelBlock>,
         asPdf: Boolean,
         translated: Boolean
-    ): String {
+    ): com.heihun.pixivplus.core.media.SavedFile {
         val store = ConfigStoreRegistry.store
         val treeUriText = store.get(ConfigKeys.NOVEL_SAVE_FOLDER_URI)
-        if (treeUriText.isBlank()) throw SaveException(W.FOLDER_UNAVAILABLE())
         val treeUri = Uri.parse(treeUriText)
 
         val sourceUrl = "https://www.pixiv.net/novel/show.php?id=$id"
@@ -355,12 +332,10 @@ class NovelSaveFeature : ConfigurableFeature(
                 images = images,
                 labels = labels
             )
-            writeDocument(context, treeUri, "$fileName.pdf", MIME_PDF, bytes)
-            return "$fileName.pdf"
+            return writeDocument(context, treeUri, "$fileName.pdf", MIME_PDF, bytes)
         }
         val text = NovelMarkers.toPlainText(title, author, sourceUrl, blocks)
-        writeDocument(context, treeUri, "$fileName.txt", MIME_TXT, text.toByteArray(Charsets.UTF_8))
-        return "$fileName.txt"
+        return writeDocument(context, treeUri, "$fileName.txt", MIME_TXT, text.toByteArray(Charsets.UTF_8))
     }
 
     // ------------------------------------------------------------------
@@ -476,34 +451,11 @@ class NovelSaveFeature : ConfigurableFeature(
         name: String,
         mime: String,
         bytes: ByteArray
-    ) {
-        val resolver = context.contentResolver
-        val treeDocumentId = try {
-            DocumentsContract.getTreeDocumentId(treeUri)
-        } catch (t: Throwable) {
-            throw SaveException(W.FOLDER_EXPIRED())
-        }
-        val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocumentId)
-
-        // 取消时只删除本次新建文件，不提前删除同名的旧下载。
-        TaskExecution.check()
-
-        val documentUri = try {
-            DocumentsContract.createDocument(resolver, parentUri, mime, name)
-        } catch (t: Throwable) {
-            throw SaveException("${W.CREATE_FILE_FAILED()} — ${t.message ?: t.javaClass.simpleName}")
-        } ?: throw SaveException(W.CREATE_FILE_FAILED())
-
-        try {
-            resolver.openOutputStream(documentUri, "wt")?.use { output ->
-                bytes.inputStream().use { TaskExecution.copy(it, output) }
-                output.flush()
-            } ?: throw SaveException(W.WRITE_FILE_FAILED())
-            TaskExecution.check()
-        } catch (t: Throwable) {
-            try { DocumentsContract.deleteDocument(resolver, documentUri) } catch (_: Exception) { }
-            if (t is TaskCancelledException) throw t
-            throw SaveException("${W.WRITE_FILE_FAILED()} — ${t.message ?: t.javaClass.simpleName}")
+    ): com.heihun.pixivplus.core.media.SavedFile {
+        return com.heihun.pixivplus.core.media.OutputTransaction(context, treeUri.toString()).use { output ->
+            val file = output.write(output.root, name, mime) { bytes.inputStream() }
+            output.commit()
+            file
         }
     }
 

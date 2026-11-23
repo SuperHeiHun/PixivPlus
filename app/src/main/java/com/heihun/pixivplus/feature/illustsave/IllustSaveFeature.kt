@@ -25,7 +25,6 @@ import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.core.util.WorkPopupHooks
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.ConfigurableFeature
-import com.heihun.pixivplus.ui.ActivityResultBridge
 import com.heihun.pixivplus.ui.panel.ChoiceDialog
 import com.heihun.pixivplus.ui.panel.ConfirmDialog
 import com.heihun.pixivplus.ui.panel.ImageSelectionDialog
@@ -191,11 +190,7 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
         val store = ConfigStoreRegistry.store
         val folder = store.get(ConfigKeys.ILLUST_SAVE_FOLDER_URI)
         if (folder.isNotBlank()) { onReady(Uri.parse(folder)); return }
-        toast(activity, W.FIRST_SAVE())
-        ActivityResultBridge.pickFolder(activity) { resultActivity, uri ->
-            if (uri == null) toast(resultActivity, W.FOLDER_CANCELLED())
-            else { store.put(ConfigKeys.ILLUST_SAVE_FOLDER_URI, uri.toString()); onReady(uri) }
-        }
+        onReady(Uri.parse(com.heihun.pixivplus.core.media.OutputPolicy.DEFAULT_FOLDER))
     }
 
     private fun <T> runJob(activity: Activity, initial: String, work: () -> T, done: (T) -> Unit) {
