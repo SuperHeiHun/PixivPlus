@@ -2,6 +2,8 @@ package com.heihun.pixivplus.core.translate
 
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.config.ConfigStore
+import com.heihun.pixivplus.core.i18n.SettingsText as S
+import com.heihun.pixivplus.core.i18n.WorkText as W
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.net.ProxyHttp
 import org.json.JSONArray
@@ -33,12 +35,12 @@ object Translator {
 
     data class Result(val text: String?, val error: String?)
 
-    val TARGETS = listOf(
-        Target("zh-CN", "简体中文"),
-        Target("zh-TW", "繁體中文"),
-        Target("en", "English"),
-        Target("ja", "日本語"),
-        Target("ko", "한국어")
+    val TARGETS get() = listOf(
+        Target("zh-CN", S.TARGET_ZH_CN()),
+        Target("zh-TW", S.TARGET_ZH_TW()),
+        Target("en", S.TARGET_EN()),
+        Target("ja", S.TARGET_JA()),
+        Target("ko", S.TARGET_KO())
     )
 
     private val cache = ConcurrentHashMap<String, String>()
@@ -67,7 +69,7 @@ object Translator {
             onProgress?.invoke(index, chunks.size)
             val result = translateChunk(store, chunk)
             if (result.text == null) {
-                return Result(null, result.error ?: lastError ?: "翻译请求失败")
+                return Result(null, result.error ?: lastError ?: W.TRANSLATION_REQUEST_FAILED())
             }
             if (builder.isNotEmpty()) builder.append('\n')
             builder.append(result.text)
@@ -88,7 +90,7 @@ object Translator {
         val translated = requestChunk(store, target.code, text)
         com.heihun.pixivplus.core.task.TaskExecution.check()
         return if (translated == null) {
-            Result(null, lastError ?: "翻译请求失败")
+            Result(null, lastError ?: W.TRANSLATION_REQUEST_FAILED())
         } else {
             if (cache.size > MAX_CACHE_ENTRIES) cache.clear()
             cache[key] = translated
@@ -114,17 +116,17 @@ object Translator {
             )
             if (response != null && response.code == 200) {
                 parseResponse(response.body)?.let { return it }
-                errors += "模块栈响应解析失败"
+                errors += W.TRANSLATION_PARSE_FAILED()
                 ModuleLog.w(TAG, "module translate parse failed")
             } else {
                 val reason = response?.let { "HTTP ${it.code}" }
-                    ?: (ProxyHttp.lastFailureReason() ?: "请求失败")
-                errors += "模块栈：$reason"
+                    ?: (ProxyHttp.lastFailureReason() ?: W.TRANSLATION_REQUEST_FAILED())
+                errors += W.MODULE_NETWORK_REASON(reason)
                 ModuleLog.w(TAG, "module translate failed: $reason")
             }
         } catch (t: Throwable) {
             com.heihun.pixivplus.core.task.TaskExecution.check()
-            errors += "模块栈：${t.message ?: t.javaClass.simpleName}"
+            errors += W.MODULE_NETWORK_REASON(t.message ?: t.javaClass.simpleName)
             ModuleLog.w(TAG, "module translate exception: ${t.javaClass.simpleName}: ${t.message}")
         }
 
@@ -132,8 +134,7 @@ object Translator {
         com.heihun.pixivplus.core.task.TaskExecution.check()
         requestChunkHost(target, body)?.let { return it }
 
-        lastError = (errors + "宿主栈失败").joinToString("；") +
-            "。请在「网络代理」配置可用代理，或开启「让 Pixiv App 也走此代理」后重试"
+        lastError = W.TRANSLATION_PROXY_HELP((errors + W.HOST_NETWORK_FAILED()).joinToString(" · "))
         return null
     }
 

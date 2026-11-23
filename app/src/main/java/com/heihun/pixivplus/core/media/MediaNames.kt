@@ -1,13 +1,14 @@
 package com.heihun.pixivplus.core.media
 
+import com.heihun.pixivplus.core.i18n.DownloadText as D
 /** 作者_标题命名；按 UTF-8 字节限制长度，兼容常见文件系统，保留 Unicode 字符。 */
 object MediaNames {
     const val DEFAULT_TEMPLATE = "{author}_{title}"
 
     fun validateTemplate(template: String) {
-        require(template.isNotBlank() && template.length <= 200) { "命名不能为空，最多 200 个字符" }
+        require(template.isNotBlank() && template.length <= 200) { D.BAD_NAME_LENGTH() }
         val literals = template.replace("{author}", "").replace("{title}", "").replace("{id}", "")
-        require('{' !in literals && '}' !in literals) { "仅支持 {author}、{title}、{id} 占位符" }
+        require('{' !in literals && '}' !in literals) { D.BAD_NAME_PLACEHOLDERS() }
     }
 
     fun stem(author: String?, title: String?, id: Long, template: String = DEFAULT_TEMPLATE): String {

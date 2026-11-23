@@ -8,6 +8,13 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class TaskExecutionTest {
+    @Test fun `progress counters do not depend on translated wording`() {
+        var progress: TaskExecution.Progress? = null
+        TaskExecution.withContext(TaskExecution.Context(CancellationToken()) { progress = it }) {
+            TaskExecution.progress("全 3 件中 2 件", 2, 3)
+        }
+        assertEquals(TaskExecution.Progress("全 3 件中 2 件", 2, 3), progress)
+    }
     @Test fun `history retains work link and download replay data`() {
         val plan = com.heihun.pixivplus.core.media.DownloadPlan(123, "作品", "content://folder/tree/test",
             com.heihun.pixivplus.core.media.DownloadFormat.IMAGES, listOf(1, 3)).encode()

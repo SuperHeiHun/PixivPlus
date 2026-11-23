@@ -1,6 +1,7 @@
 package com.heihun.pixivplus.core.media
 
 import com.heihun.pixivplus.core.config.ConfigStore
+import com.heihun.pixivplus.core.i18n.DownloadText as D
 import com.heihun.pixivplus.core.net.ApiHooks
 import com.heihun.pixivplus.core.net.ProxyHttp
 import com.heihun.pixivplus.core.util.EntityReader
@@ -51,13 +52,13 @@ object MediaRepository {
 
     private fun api(store: ConfigStore, path: String): JSONObject {
         val token = ApiHooks.authorizationToken()
-            ?: throw IllegalStateException("未获取到 Pixiv 登录态，请先加载作品详情后重试")
+            ?: throw IllegalStateException(D.NO_PIXIV_SESSION())
         val response = ProxyHttp.get(store, URL("https://app-api.pixiv.net$path"), headers = mapOf(
             "Authorization" to token,
             "User-Agent" to "PixivAndroidApp/6.192.1 (Android 11; PixivPlus)",
             "App-OS" to "android", "App-OS-Version" to "11", "App-Version" to "6.192.1"
-        )) ?: throw IllegalStateException("获取图片信息失败，请检查网络代理")
-        check(response.code == 200) { "获取图片信息失败：HTTP ${response.code}" }
+        )) ?: throw IllegalStateException(D.FETCH_IMAGE_FAILED())
+        check(response.code == 200) { D.FETCH_IMAGE_HTTP(response.code) }
         return JSONObject(response.body)
     }
 
@@ -66,8 +67,9 @@ object MediaRepository {
         com.heihun.pixivplus.core.task.TaskExecution.check()
         MediaModels.requireImageUrl(url)
         ProxyHttp.downloadFile(store, URL(url), destination, maxBytes.toLong()) { done, total ->
-            if (total > 0) com.heihun.pixivplus.core.task.TaskExecution.progress("正在下载 ${destination.name}… ($done/$total)")
-            else com.heihun.pixivplus.core.task.TaskExecution.progress("正在下载 ${destination.name}… 已接收 $done 字节")
+            // downloadFile 已将字节总量限制在 maxBytes (Int) 以内。
+            if (total > 0) com.heihun.pixivplus.core.task.TaskExecution.progress(D.FILE_PROGRESS(destination.name, done, total), done.toInt(), total.toInt())
+            else com.heihun.pixivplus.core.task.TaskExecution.progress(D.FILE_RECEIVED(destination.name, done))
         }
     }
 }

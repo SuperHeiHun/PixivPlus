@@ -1,6 +1,7 @@
 package com.heihun.pixivplus.core.net
 
 import com.heihun.pixivplus.core.config.ConfigStore
+import com.heihun.pixivplus.core.i18n.NetworkText as N
 import com.heihun.pixivplus.core.log.ModuleLog
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -62,7 +63,7 @@ object ProxyHttp {
         return try {
             if (spec.mode.requiresEndpoint() && !spec.hasValidEndpoint()) {
                 ModuleLog.w(TAG, "invalid proxy config (${spec.display()})")
-                lastFailure.set("代理地址或端口无效")
+                lastFailure.set(N.BAD_PROXY())
                 null
             } else {
                 TunnelHttpClient.request(
@@ -107,7 +108,7 @@ object ProxyHttp {
         return try {
             if (spec.mode.requiresEndpoint() && !spec.hasValidEndpoint()) {
                 ModuleLog.w(TAG, "invalid proxy config (${spec.display()})")
-                lastFailure.set("代理地址或端口无效")
+                lastFailure.set(N.BAD_PROXY())
                 null
             } else {
                 TunnelHttpClient.requestBytes(
@@ -134,7 +135,7 @@ object ProxyHttp {
 
     fun downloadFile(store: ConfigStore, url: URL, file: java.io.File, maxBytes: Long, progress: (Long, Long) -> Unit) {
         val spec = effectiveSpec(store)
-        require(!spec.mode.requiresEndpoint() || spec.hasValidEndpoint()) { "代理地址或端口无效" }
+        require(!spec.mode.requiresEndpoint() || spec.hasValidEndpoint()) { N.BAD_PROXY() }
         TunnelHttpClient.downloadFile(spec, url, defaultHeaders(mapOf("Referer" to "https://www.pixiv.net/", "Accept-Encoding" to "identity")), file, maxBytes, progress)
     }
 

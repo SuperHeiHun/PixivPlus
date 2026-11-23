@@ -9,6 +9,9 @@ import android.widget.Toast
 import com.heihun.pixivplus.adapt.ResolveRegistry
 import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.Runtime
+import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.I18n
+import com.heihun.pixivplus.core.i18n.PanelText as P
 import com.heihun.pixivplus.core.log.LogExporter
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.ui.UiKit
@@ -20,24 +23,24 @@ object DiagnosticsPanel {
             orientation = LinearLayout.VERTICAL
         }
 
-        container.addView(UiKit.infoRow(context, "宿主版本", "${Host.versionName} (${Host.versionCode})"))
-        container.addView(UiKit.infoRow(context, "模块构建", moduleBuildLabel()))
-        container.addView(UiKit.infoRow(context, "当前进程", processLabel()))
-        container.addView(UiKit.infoRow(context, "数据库", Runtime.databasePath ?: "未初始化（非主进程或初始化失败）"))
-        container.addView(UiKit.infoRow(context, "配置", Runtime.configOrNull()?.javaClass?.simpleName ?: "未初始化"))
+        container.addView(UiKit.infoRow(context, P.HOST_VERSION(), "${Host.versionName} (${Host.versionCode})"))
+        container.addView(UiKit.infoRow(context, P.MODULE_BUILD(), moduleBuildLabel()))
+        container.addView(UiKit.infoRow(context, P.PROCESS(), processLabel()))
+        container.addView(UiKit.infoRow(context, P.DATABASE(), Runtime.databasePath ?: P.DATABASE_STATUS()))
+        container.addView(UiKit.infoRow(context, P.CONFIG(), Runtime.configOrNull()?.javaClass?.simpleName ?: C.NOT_READY()))
         container.addView(
             UiKit.infoRow(
                 context,
-                "接口响应处理",
-                "已处理 ${com.heihun.pixivplus.core.net.PayloadProcessor.processedCount()} 个，已过滤 ${com.heihun.pixivplus.core.net.PayloadProcessor.filteredCount()} 项"
+                P.RESPONSES(),
+                P.RESPONSE_COUNTS(com.heihun.pixivplus.core.net.PayloadProcessor.processedCount(), com.heihun.pixivplus.core.net.PayloadProcessor.filteredCount())
             )
         )
 
         container.addView(UiKit.divider(context, 16, 16))
-        container.addView(UiKit.cardSectionTitle(context, "锚点解析状态"))
+        container.addView(UiKit.cardSectionTitle(context, P.ANCHORS()))
         val anchors = ResolveRegistry.all()
         if (anchors.isEmpty()) {
-            container.addView(UiKit.infoRow(context, "状态", "尚未解析"))
+            container.addView(UiKit.infoRow(context, P.STATUS(), P.NOT_RESOLVED()))
         } else {
             for ((id, status) in anchors) {
                 container.addView(
@@ -51,36 +54,36 @@ object DiagnosticsPanel {
         }
 
         container.addView(UiKit.divider(context, 16, 16))
-        container.addView(UiKit.cardSectionTitle(context, "日志"))
+        container.addView(UiKit.cardSectionTitle(context, P.LOGS()))
         container.addView(
-            UiKit.filledButtonRow(context, "导出日志到文件") {
+            UiKit.filledButtonRow(context, P.EXPORT_LOGS()) {
                 val path = LogExporter.export(context)
                 if (path == null) {
-                    toast(context, "导出失败，详见日志")
+                    toast(context, P.EXPORT_LOGS_FAILED())
                 } else {
-                    toast(context, "已导出：$path")
+                    toast(context, P.EXPORTED(path))
                 }
             }
         )
         container.addView(
-            UiKit.buttonRow(context, "复制最近 200 行日志") {
+            UiKit.buttonRow(context, P.COPY_LOGS()) {
                 val text = ModuleLog.dump().takeLast(200).joinToString("\n")
                 copyToClipboard(context, text)
-                toast(context, "已复制到剪贴板")
+                toast(context, P.COPIED())
             }
         )
         container.addView(
-            UiKit.dangerButtonRow(context, "清空内存日志") {
+            UiKit.dangerButtonRow(context, P.CLEAR_LOGS()) {
                 ModuleLog.clear()
-                toast(context, "已清空")
+                toast(context, C.CLEARED())
             }
         )
         return container
     }
 
     private fun processLabel(): String {
-        val process = Host.processName.ifEmpty { "unknown" }
-        return if (Host.isMainProcess) "$process (主进程)" else "$process (子进程)"
+        val process = Host.processName.ifEmpty { C.UNKNOWN() }
+        return if (Host.isMainProcess) P.MAIN_PROCESS(process) else P.CHILD_PROCESS(process)
     }
 
     /** BUILD_FINGERPRINT（构建时间戳）格式化为可读时间，用于确认设备上实际安装的构建。 */
@@ -88,11 +91,10 @@ object DiagnosticsPanel {
         return try {
             val raw = com.heihun.pixivplus.BuildConfig.BUILD_FINGERPRINT
             val ts = raw.toLongOrNull() ?: return raw
-            val time = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ROOT)
-                .format(java.util.Date(ts))
+            val time = I18n.dateTime(ts)
             "$time ($raw)"
         } catch (_: Throwable) {
-            "unknown"
+            C.UNKNOWN()
         }
     }
 

@@ -19,8 +19,10 @@ object ActivityResultBridge {
 
     private const val TAG = "ActivityResultBridge"
     private const val REQUEST_PICK_FOLDER = 0x504C
+    private const val REQUEST_PICK_LANGUAGE_PACK = 0x504D
 
-    private val pending = AtomicReference<((Activity, Uri?) -> Unit)?>(null)
+    private data class Request(val code: Int, val callback: (Activity, Uri?) -> Unit)
+    private val pending = AtomicReference<Request?>(null)
 
     @Volatile
     private var installed = false
@@ -34,18 +36,35 @@ object ActivityResultBridge {
 
     /** 打开系统文件夹选择器；用户取消或失败时回调 null。 */
     fun pickFolder(activity: Activity, onPicked: (Activity, Uri?) -> Unit) {
-        pending.set(onPicked)
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
-        try {
-            activity.startActivityForResult(intent, REQUEST_PICK_FOLDER)
-        } catch (t: Throwable) {
-            pending.set(null)
-            ModuleLog.e(TAG, "start folder picker failed", t)
+        pick(activity, REQUEST_PICK_FOLDER, intent, onPicked)
+    }
+
+    fun pickLanguagePack(activity: Activity, onPicked: (Activity, Uri?) -> Unit) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            // 部分文件提供方把 .json 标为 text/plain 或 application/octet-stream；内容由导入器校验。
+            type = "*/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        pick(activity, REQUEST_PICK_LANGUAGE_PACK, intent, onPicked)
+    }
+
+    private fun pick(activity: Activity, code: Int, intent: Intent, onPicked: (Activity, Uri?) -> Unit) {
+        val request = Request(code, onPicked)
+        if (!pending.compareAndSet(null, request)) {
             onPicked(activity, null)
+            return
+        }
+        try {
+            activity.startActivityForResult(intent, code)
+        } catch (t: Throwable) {
+            ModuleLog.e(TAG, "start picker failed (request=$code)", t)
+            if (pending.compareAndSet(request, null)) onPicked(activity, null)
         }
     }
 
@@ -92,20 +111,16 @@ object ActivityResultBridge {
     }
 
     private fun handle(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode != REQUEST_PICK_FOLDER) return
-        val callback = pending.getAndSet(null) ?: return
-        var uri: Uri? = null
-        if (resultCode == Activity.RESULT_OK) {
-            val intent = data
-            if (intent != null) {
-                uri = intent.data
-                if (uri != null) takePersistablePermission(activity, uri, intent.flags)
-            }
+        val request = pending.get() ?: return
+        if (request.code != requestCode || !pending.compareAndSet(request, null)) return
+        val uri = if (resultCode == Activity.RESULT_OK) data?.data else null
+        if (requestCode == REQUEST_PICK_FOLDER && uri != null && data != null) {
+            takePersistablePermission(activity, uri, data.flags)
         }
         try {
-            callback(activity, uri)
+            request.callback(activity, uri)
         } catch (t: Throwable) {
-            ModuleLog.e(TAG, "folder picker callback failed", t)
+            ModuleLog.e(TAG, "picker callback failed (request=$requestCode)", t)
         }
     }
 

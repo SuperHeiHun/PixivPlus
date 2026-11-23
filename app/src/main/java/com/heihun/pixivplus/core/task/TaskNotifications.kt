@@ -11,6 +11,8 @@ import android.content.IntentFilter
 import android.os.Build
 import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.config.ConfigKeys
+import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.TaskText as T
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import java.util.concurrent.ConcurrentHashMap
@@ -22,14 +24,20 @@ object TaskNotifications {
     private const val CANCEL_SCHEME = "pixivplus-task"
     private val shown = ConcurrentHashMap.newKeySet<String>()
     private var initialized = false
+    private var channelName: String? = null
     // API 33+ 显式 NOT_EXPORTED；旧系统没有该标志，不能用需要宿主声明权限的 ContextCompat 包装。
     @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Synchronized private fun initialize(context: Context, manager: NotificationManager) {
-        if (initialized) return
-        val channel = NotificationChannel(CHANNEL, "PixivPlus 下载与翻译（静默）", NotificationManager.IMPORTANCE_LOW).apply {
-            setSound(null, null); enableVibration(false); setShowBadge(false)
+        val title = T.CHANNEL()
+        if (channelName != title) {
+            val channel = manager.getNotificationChannel(CHANNEL) ?: NotificationChannel(CHANNEL, title, NotificationManager.IMPORTANCE_LOW).apply {
+                setSound(null, null); enableVibration(false); setShowBadge(false)
+            }
+            channel.name = title
+            manager.createNotificationChannel(channel)
+            channelName = title
         }
-        manager.createNotificationChannel(channel)
+        if (initialized) return
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == ACTION) intent.getStringExtra("task_id")?.let { TaskManager.cancel(it) }
@@ -52,11 +60,12 @@ object TaskNotifications {
             }
             if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return
             initialize(context, manager)
+            val message = record.displayMessage()
             val notification = Notification.Builder(context, CHANNEL)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
                 .setContentTitle("PixivPlus · ${record.title}")
-                .setContentText(record.message)
-                .setStyle(Notification.BigTextStyle().bigText(record.message))
+                .setContentText(message)
+                .setStyle(Notification.BigTextStyle().bigText(message))
                 .setContentIntent(TaskNavigation.contentIntent(context))
                 .setOnlyAlertOnce(true).setVisibility(Notification.VISIBILITY_PRIVATE)
                 .setOngoing(!record.state.terminal).setAutoCancel(record.state.terminal)
@@ -65,7 +74,7 @@ object TaskNotifications {
                 val intent = Intent(ACTION).setPackage(Host.PACKAGE).putExtra("task_id", record.id)
                     .setData(android.net.Uri.parse("$CANCEL_SCHEME://${record.id}"))
                 val pending = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-                notification.addAction(Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "取消", pending).build())
+                notification.addAction(Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, C.CANCEL(), pending).build())
             } else notification.setTimeoutAfter(60000)
             manager.notify(record.id, 1, notification.build())
             shown.add(record.id)

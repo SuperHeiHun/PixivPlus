@@ -11,7 +11,6 @@ import android.text.Spanned
 import android.text.TextPaint
 import android.text.method.LinkMovementMethod
 import android.text.style.ClickableSpan
-import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -22,6 +21,8 @@ import android.widget.Toast
 import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.WorkContext
 import com.heihun.pixivplus.core.config.ConfigKeys
+import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.WorkText as W
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.net.PayloadProcessor
 import com.heihun.pixivplus.core.novel.NovelBlock
@@ -68,6 +69,13 @@ class TranslationFeature : ConfigurableFeature(
     "简介与小说翻译",
     ConfigKeys.TRANSLATE_ENABLED
 ) {
+
+    override fun onLanguageChanged(host: Host) {
+        currentActivity?.window?.decorView?.let { view ->
+            view.removeCallbacks(pollTask)
+            view.post(pollTask)
+        }
+    }
 
     private companion object {
         const val NOVEL_TEXT_ACTIVITY =
@@ -137,20 +145,10 @@ class TranslationFeature : ConfigurableFeature(
                     val novel = activity.javaClass.name == NOVEL_TEXT_ACTIVITY
                     for (toolbar in MenuHooks.findToolbars(activity.window?.decorView ?: return)) {
                         val menu = MenuHooks.readMenu(toolbar) ?: continue
-                        var changed = false
-                        if (menu.findItem(ID_TRANSLATE_CAPTION) == null) {
-                            menu.add(Menu.NONE, ID_TRANSLATE_CAPTION, FeatureMenuOrder.TRANSLATE_CAPTION, "翻译简介")
-                            changed = true
-                        }
+                        var changed = MenuHooks.ensureItem(menu, ID_TRANSLATE_CAPTION, FeatureMenuOrder.TRANSLATE_CAPTION, W.TRANSLATE_CAPTION())
                         if (novel) {
-                            if (menu.findItem(ID_TRANSLATE_NOVEL) == null) {
-                                menu.add(Menu.NONE, ID_TRANSLATE_NOVEL, FeatureMenuOrder.TRANSLATE_NOVEL, "翻译小说")
-                                changed = true
-                            }
-                            if (menu.findItem(ID_RESTORE_NOVEL) == null) {
-                                menu.add(Menu.NONE, ID_RESTORE_NOVEL, FeatureMenuOrder.RESTORE_NOVEL, "显示原文")
-                                changed = true
-                            }
+                            changed = MenuHooks.ensureItem(menu, ID_TRANSLATE_NOVEL, FeatureMenuOrder.TRANSLATE_NOVEL, W.TRANSLATE_NOVEL()) || changed
+                            changed = MenuHooks.ensureItem(menu, ID_RESTORE_NOVEL, FeatureMenuOrder.RESTORE_NOVEL, W.SHOW_ORIGINAL()) || changed
                         }
                         if (changed) {
                             ModuleLog.i(displayName, "translate menu added (total=${menu.size()})")
@@ -200,31 +198,31 @@ class TranslationFeature : ConfigurableFeature(
         if (!isEnabled(ConfigStoreRegistry.store)) return
         val caption = currentCaption(activity)
         if (caption.isNullOrBlank()) {
-            toast(activity, "未获取到当前简介，请等简介加载后重试")
+            toast(activity, W.CAPTION_NOT_READY())
             return
         }
-        val holder = captionDialog(activity, "正在翻译…")
-        val task = TaskManager.begin(TaskKind.TRANSLATE, "简介翻译")
+        val holder = captionDialog(activity, W.TRANSLATING())
+        val task = TaskManager.begin(TaskKind.TRANSLATE, W.CAPTION_TRANSLATION())
         holder.dialog.setOnDismissListener { TaskManager.cancel(task.record.id) }
         executor.execute {
             val store = ConfigStoreRegistry.store
             val result = try {
                 task.execute {
                     val translated = Translator.translate(store, caption) { done, total ->
-                        TaskExecution.progress("正在翻译简介… (${done + 1}/$total)")
+                        TaskExecution.progress(W.TRANSLATING_CAPTION_PROGRESS(done + 1, total), done + 1, total)
                     }
-                    check(translated.text != null) { translated.error ?: "翻译失败" }
+                    check(translated.text != null) { translated.error ?: W.TRANSLATION_REQUEST_FAILED() }
                     translated
                 }
             } catch (t: Exception) {
-                Translator.Result(null, if (t is TaskCancelledException) "任务已取消" else t.message ?: "翻译失败")
+                Translator.Result(null, if (t is TaskCancelledException) C.CANCELLED() else t.message ?: C.UNKNOWN_ERROR())
             }
             runOnUi(activity) {
                 try {
                     holder.body.text = if (result.text != null) {
-                        "【原文】\n$caption\n\n【译文】\n${result.text}"
+                        W.CAPTION_RESULT(caption, result.text)
                     } else {
-                        "翻译失败：${result.error ?: "未知错误"}"
+                        W.TRANSLATION_FAILED(result.error ?: C.UNKNOWN_ERROR())
                     }
                     holder.body.setTextIsSelectable(true)
                     applyCaptionLinks(holder.body)
@@ -378,7 +376,7 @@ class TranslationFeature : ConfigurableFeature(
     private fun captionDialog(activity: Activity, initial: String): CaptionDialogHolder {
         val dialog = UiKit.dialog(activity)
         val surface = UiKit.dialogSurface(activity)
-        surface.addView(UiKit.dialogHeader(activity, "简介翻译", null) { UiKit.dismissAnimated(dialog, surface) })
+        surface.addView(UiKit.dialogHeader(activity, W.CAPTION_TRANSLATION(), null) { UiKit.dismissAnimated(dialog, surface) })
         surface.addView(UiKit.divider(activity))
         val scroll = ScrollView(activity)
         val body = TextView(activity).apply {
@@ -435,16 +433,16 @@ class TranslationFeature : ConfigurableFeature(
         if (activity == null) return
         if (!isEnabled(ConfigStoreRegistry.store)) return
         if (!translating.compareAndSet(false, true)) {
-            toast(activity, "正在翻译中，请稍候…")
+            toast(activity, W.TRANSLATION_BUSY())
             return
         }
         val webView = findWebView(activity.window?.decorView)
         if (webView == null) {
             translating.set(false)
-            toast(activity, "未找到小说内容，请返回后重新进入阅读页")
+            toast(activity, W.NOVEL_CONTENT_MISSING())
             return
         }
-        toast(activity, "正在读取小说内容…")
+        toast(activity, W.READ_NOVEL())
         try {
             webView.evaluateJavascript(NovelExtractor.EXTRACT_SCRIPT) { raw ->
                 val blocks = try {
@@ -465,7 +463,7 @@ class TranslationFeature : ConfigurableFeature(
                 }
                 if (blocks.isEmpty()) {
                     translating.set(false)
-                    toast(activity, "未读取到小说内容，请等页面加载完成后再试")
+                    toast(activity, W.NOVEL_WAIT_FOR_LOAD())
                     return@evaluateJavascript
                 }
                 startNovelTranslation(activity, webView, blocks)
@@ -473,7 +471,7 @@ class TranslationFeature : ConfigurableFeature(
         } catch (t: Throwable) {
             translating.set(false)
             ModuleLog.w(displayName, "extract novel failed", t)
-            toast(activity, "读取小说内容失败：${t.message ?: t.javaClass.simpleName}")
+            toast(activity, W.NOVEL_READ_FAILED(t.message ?: t.javaClass.simpleName))
         }
     }
 
@@ -483,14 +481,14 @@ class TranslationFeature : ConfigurableFeature(
      * 连续文本行合并为组翻译后逐行回填；渲染为 HTML 走覆盖层显示。
      */
     private fun startNovelTranslation(activity: Activity, webView: WebView, blocks: List<NovelBlock>) {
-        val task = TaskManager.begin(TaskKind.TRANSLATE, "小说翻译：${WorkContext.current?.title.orEmpty()}")
-        showProgress(activity, "正在翻译小说…")
+        val task = TaskManager.begin(TaskKind.TRANSLATE, W.NOVEL_TRANSLATION(WorkContext.current?.title.orEmpty()))
+        showProgress(activity, W.TRANSLATING_NOVEL())
         executor.execute {
             val store = ConfigStoreRegistry.store
             val html = try {
                 task.execute {
                     val translated = NovelTranslation.translate(store, blocks) { done, total ->
-                        showProgress(activity, "正在翻译小说… ($done/$total)")
+                        showProgress(activity, W.TRANSLATING_NOVEL_PROGRESS(done, total), done, total)
                     }
                     NovelText.toHtml(translated)
                 }
@@ -498,7 +496,7 @@ class TranslationFeature : ConfigurableFeature(
                 ModuleLog.w(displayName, "novel translation failed", t)
                 runOnUi(activity) {
                     translating.set(false)
-                    toast(activity, if (t is TaskCancelledException) "小说翻译已取消" else "翻译失败：${t.message ?: t.javaClass.simpleName}")
+                    toast(activity, if (t is TaskCancelledException) W.NOVEL_TRANSLATION_CANCELLED() else W.TRANSLATION_FAILED(t.message ?: t.javaClass.simpleName))
                 }
                 return@execute
             } finally {
@@ -509,14 +507,14 @@ class TranslationFeature : ConfigurableFeature(
                 try {
                     webView.evaluateJavascript(NovelExtractor.applyTranslationScript(html)) { value ->
                         if (value?.trim('"') == "true") {
-                            toast(activity, "已显示译文，可在菜单选择「显示原文」还原")
+                            toast(activity, W.TRANSLATION_SHOWN())
                         } else {
-                            toast(activity, "译文写入失败")
+                            toast(activity, W.APPLY_TRANSLATION_FAILED_SHORT())
                         }
                     }
                 } catch (t: Throwable) {
                     ModuleLog.w(displayName, "apply translation failed", t)
-                    toast(activity, "译文写入失败：${t.message ?: t.javaClass.simpleName}")
+                    toast(activity, W.APPLY_TRANSLATION_FAILED(t.message ?: t.javaClass.simpleName))
                 }
             }
         }
@@ -526,15 +524,15 @@ class TranslationFeature : ConfigurableFeature(
         if (activity == null) return
         val webView = findWebView(activity.window?.decorView)
         if (webView == null) {
-            toast(activity, "未找到小说内容")
+            toast(activity, W.NOVEL_CONTENT_MISSING())
             return
         }
         try {
             webView.evaluateJavascript(NovelExtractor.RESTORE_SCRIPT) { value ->
                 if (value?.trim('"') == "true") {
-                    toast(activity, "已显示原文")
+                    toast(activity, W.ORIGINAL_SHOWN())
                 } else {
-                    toast(activity, "当前没有译文")
+                    toast(activity, W.NO_TRANSLATION())
                 }
             }
         } catch (t: Throwable) {
@@ -557,8 +555,8 @@ class TranslationFeature : ConfigurableFeature(
     // 工具
     // ------------------------------------------------------------------
 
-    private fun showProgress(activity: Activity, message: String) {
-        TaskExecution.progress(message)
+    private fun showProgress(activity: Activity, message: String, done: Int = 0, total: Int = 0) {
+        TaskExecution.progress(message, done, total)
         if (ConfigStoreRegistry.store.get(ConfigKeys.TASK_NOTIFICATIONS_ENABLED)) return
         runOnUi(activity) {
             try {

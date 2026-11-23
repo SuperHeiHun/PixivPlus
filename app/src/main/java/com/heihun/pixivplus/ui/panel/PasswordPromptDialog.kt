@@ -5,6 +5,8 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.LinearLayout
+import com.heihun.pixivplus.core.i18n.BackupText as B
+import com.heihun.pixivplus.core.i18n.CommonText as C
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.ui.UiKit
 
@@ -35,7 +37,7 @@ object PasswordPromptDialog {
             val field = UiKit.inputField(
                 context = activity,
                 value = "",
-                hint = "备份密码",
+                hint = B.BACKUP_PASSWORD(),
                 password = true,
                 onChanged = {}
             )
@@ -59,10 +61,10 @@ object PasswordPromptDialog {
                     UiKit.dp(activity, 12)
                 )
             }
-            val cancel = UiKit.textButton(activity, "取消").apply {
+            val cancel = UiKit.textButton(activity, C.CANCEL()).apply {
                 setOnClickListener { UiKit.dismissAnimated(dialog, root) }
             }
-            val confirm = UiKit.filledButton(activity, "确定").apply {
+            val confirm = UiKit.filledButton(activity, C.CONFIRM()).apply {
                 setOnClickListener {
                     val value = field.text.toString()
                     if (value.isEmpty()) return@setOnClickListener

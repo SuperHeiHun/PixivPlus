@@ -6,7 +6,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
-import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -16,6 +15,8 @@ import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.WorkContext
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.config.ConfigStore
+import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.WorkText as W
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.novel.NovelBlock
 import com.heihun.pixivplus.core.novel.NovelExtractor
@@ -59,6 +60,13 @@ class NovelSaveFeature : ConfigurableFeature(
     "小说保存",
     ConfigKeys.NOVEL_SAVE_ENABLED
 ) {
+
+    override fun onLanguageChanged(host: Host) {
+        currentActivity?.window?.decorView?.let { view ->
+            view.removeCallbacks(pollTask)
+            view.post(pollTask)
+        }
+    }
 
     private companion object {
         const val NOVEL_TEXT_ACTIVITY =
@@ -115,15 +123,8 @@ class NovelSaveFeature : ConfigurableFeature(
                 if (isEnabled(ConfigStoreRegistry.store)) {
                     for (toolbar in MenuHooks.findToolbars(activity.window?.decorView ?: return)) {
                         val menu = MenuHooks.readMenu(toolbar) ?: continue
-                        var changed = false
-                        if (menu.findItem(ID_SAVE_PDF) == null) {
-                            menu.add(Menu.NONE, ID_SAVE_PDF, FeatureMenuOrder.SAVE_PDF, "保存为 PDF")
-                            changed = true
-                        }
-                        if (menu.findItem(ID_SAVE_TXT) == null) {
-                            menu.add(Menu.NONE, ID_SAVE_TXT, FeatureMenuOrder.SAVE_TXT, "保存为 TXT")
-                            changed = true
-                        }
+                        var changed = MenuHooks.ensureItem(menu, ID_SAVE_PDF, FeatureMenuOrder.SAVE_PDF, W.SAVE_PDF())
+                        changed = MenuHooks.ensureItem(menu, ID_SAVE_TXT, FeatureMenuOrder.SAVE_TXT, W.SAVE_TXT()) || changed
                         if (changed) {
                             ModuleLog.i(displayName, "novel save menu added (total=${menu.size()})")
                         }
@@ -177,23 +178,23 @@ class NovelSaveFeature : ConfigurableFeature(
         if (!isEnabled(ConfigStoreRegistry.store)) return
         val id = novelId(activity)
         if (id <= 0L) {
-            toast(activity, "未获取到当前小说 ID")
+            toast(activity, W.NOVEL_ID_MISSING())
             return
         }
         val webView = findWebView(activity.window?.decorView)
         if (webView == null) {
-            toast(activity, "未找到小说内容，请返回后重新进入阅读页")
+            toast(activity, W.NOVEL_CONTENT_MISSING())
             return
         }
         ChoiceDialog.show(
             activity,
-            "选择保存内容",
-            listOf("保存原版", "翻译后保存（${Translator.targetOf(ConfigStoreRegistry.store).label}）"),
+            W.CHOOSE_SAVE_CONTENT(),
+            listOf(W.SAVE_ORIGINAL_TEXT(), W.SAVE_TRANSLATION(Translator.targetOf(ConfigStoreRegistry.store).label)),
             selectedIndex = -1
         ) { selected ->
             val translated = selected == 1
             if (translated && !ConfigStoreRegistry.store.get(ConfigKeys.TRANSLATE_ENABLED)) {
-                toast(activity, "请先在模块设置中开启「简介与小说翻译」")
+                toast(activity, W.TRANSLATION_DISABLED())
             } else {
                 chooseFolderAndSave(activity, id, asPdf, translated)
             }
@@ -207,10 +208,10 @@ class NovelSaveFeature : ConfigurableFeature(
             ""
         }
         if (folder.isBlank()) {
-            toast(activity, "首次保存请选择保存位置")
+            toast(activity, W.FIRST_SAVE())
             ActivityResultBridge.pickFolder(activity) { resultActivity, uri ->
                 if (uri == null) {
-                    toast(resultActivity, "未选择保存位置，已取消")
+                    toast(resultActivity, W.FOLDER_CANCELLED())
                     return@pickFolder
                 }
                 try {
@@ -218,7 +219,7 @@ class NovelSaveFeature : ConfigurableFeature(
                 } catch (t: Throwable) {
                     ModuleLog.w(displayName, "store save folder failed", t)
                 }
-                toast(resultActivity, "已选择保存位置")
+                toast(resultActivity, C.FOLDER_SELECTED())
                 extractAndSave(resultActivity, id, asPdf, translated)
             }
             return
@@ -248,10 +249,10 @@ class NovelSaveFeature : ConfigurableFeature(
     private fun extractAndSave(activity: Activity, id: Long, asPdf: Boolean, translated: Boolean) {
         val webView = findWebView(activity.window?.decorView)
         if (webView == null) {
-            toast(activity, "未找到小说内容，请返回后重新进入阅读页")
+            toast(activity, W.NOVEL_CONTENT_MISSING())
             return
         }
-        toast(activity, "正在读取小说内容…")
+        toast(activity, W.READ_NOVEL())
         try {
             webView.evaluateJavascript(NovelExtractor.EXTRACT_SCRIPT) { raw ->
                 try {
@@ -267,28 +268,29 @@ class NovelSaveFeature : ConfigurableFeature(
                     }
                     val blocks = if (tokens != null) NovelExtractor.blocksFromTokens(tokens) else emptyList()
                     if (blocks.isEmpty()) {
-                        toast(activity, "未读取到小说内容，请等页面加载完成后再试")
+                        toast(activity, W.NOVEL_WAIT_FOR_LOAD())
                         return@evaluateJavascript
                     }
                     startSave(activity, id, blocks, asPdf, translated)
                 } catch (t: Throwable) {
                     ModuleLog.w(displayName, "parse extracted content failed", t)
-                    toast(activity, "解析小说内容失败：${t.message ?: t.javaClass.simpleName}")
+                    toast(activity, W.NOVEL_PARSE_FAILED(t.message ?: t.javaClass.simpleName))
                 }
             }
         } catch (t: Throwable) {
             ModuleLog.w(displayName, "extract content failed", t)
-            toast(activity, "读取小说内容失败：${t.message ?: t.javaClass.simpleName}")
+            toast(activity, W.NOVEL_READ_FAILED(t.message ?: t.javaClass.simpleName))
         }
     }
 
     private fun startSave(activity: Activity, id: Long, blocks: List<NovelBlock>, asPdf: Boolean, translated: Boolean) {
-        toast(activity, if (translated) "正在翻译小说用于保存…" else "正在生成${if (asPdf) " PDF" else " TXT"}…")
+        val format = if (asPdf) "PDF" else "TXT"
+        toast(activity, if (translated) W.TRANSLATE_FOR_EXPORT() else W.GENERATE_NOVEL_EXPORT(format))
         val appContext = activity.applicationContext
         val snapshot = WorkContext.current?.takeIf { it.id == id }
         val title = snapshot?.title?.takeIf { it.isNotBlank() } ?: "novel_$id"
         val author = snapshot?.authorName.orEmpty()
-        val task = TaskManager.begin(TaskKind.DOWNLOAD, "小说${if (asPdf) "PDF" else "TXT"}保存：$title", id, "NOVEL")
+        val task = TaskManager.begin(TaskKind.DOWNLOAD, W.NOVEL_EXPORT(format, title), id, "NOVEL")
         Thread({
             var result: String? = null
             var error: String? = null
@@ -296,22 +298,22 @@ class NovelSaveFeature : ConfigurableFeature(
                 result = task.execute {
                     val outputBlocks = if (translated) {
                         NovelText.toBlocks(NovelTranslation.translate(ConfigStoreRegistry.store, blocks) { done, total ->
-                            TaskExecution.progress("正在翻译小说用于保存… ($done/$total)")
+                            TaskExecution.progress(W.TRANSLATE_FOR_EXPORT_PROGRESS(done, total), done, total)
                         })
                     } else blocks
-                    TaskExecution.progress("正在生成${if (asPdf) " PDF" else " TXT"}…")
+                    TaskExecution.progress(W.GENERATE_NOVEL_EXPORT(format))
                     save(appContext, id, title, author, outputBlocks, asPdf, translated)
                 }
                 ModuleLog.i(displayName, "novel saved id=$id pdf=$asPdf file=$result")
             } catch (t: Throwable) {
-                error = if (t is TaskCancelledException) "任务已取消" else t.message ?: t.javaClass.simpleName
+                error = if (t is TaskCancelledException) C.CANCELLED() else t.message ?: t.javaClass.simpleName
                 ModuleLog.w(displayName, "novel save failed id=$id", t)
             }
             runOnUi(activity) {
                 if (result != null) {
-                    toast(activity, "已保存：$result")
+                    toast(activity, C.SAVED(result))
                 } else {
-                    toast(activity, "保存失败：${error ?: "未知错误"}")
+                    toast(activity, C.SAVE_FAILED(error ?: C.UNKNOWN_ERROR()))
                 }
             }
         }, "plp-novel-save").apply { isDaemon = true }.start()
@@ -335,7 +337,7 @@ class NovelSaveFeature : ConfigurableFeature(
     ): String {
         val store = ConfigStoreRegistry.store
         val treeUriText = store.get(ConfigKeys.NOVEL_SAVE_FOLDER_URI)
-        if (treeUriText.isBlank()) throw SaveException("尚未选择保存位置")
+        if (treeUriText.isBlank()) throw SaveException(W.FOLDER_UNAVAILABLE())
         val treeUri = Uri.parse(treeUriText)
 
         val sourceUrl = "https://www.pixiv.net/novel/show.php?id=$id"
@@ -369,12 +371,13 @@ class NovelSaveFeature : ConfigurableFeature(
         val result = HashMap<String, Bitmap?>()
         val seen = HashSet<String>()
         var count = 0
+        val total = minOf(MAX_IMAGES, blocks.count { it is NovelBlock.Picture })
         for (block in blocks) {
             TaskExecution.check()
             if (block !is NovelBlock.Picture) continue
             if (count >= MAX_IMAGES) break
             count++
-            TaskExecution.progress("正在下载小说配图… ($count/${minOf(MAX_IMAGES, blocks.count { it is NovelBlock.Picture })})")
+            TaskExecution.progress(W.NOVEL_IMAGE_PROGRESS(count, total), count, total)
             val key = NovelMarkers.imageKey(block)
             if (!seen.add(key)) continue
             result[key] = downloadBitmapAny(store, block.url)
@@ -478,7 +481,7 @@ class NovelSaveFeature : ConfigurableFeature(
         val treeDocumentId = try {
             DocumentsContract.getTreeDocumentId(treeUri)
         } catch (t: Throwable) {
-            throw SaveException("保存位置授权已失效，请重新选择")
+            throw SaveException(W.FOLDER_EXPIRED())
         }
         val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocumentId)
 
@@ -488,19 +491,19 @@ class NovelSaveFeature : ConfigurableFeature(
         val documentUri = try {
             DocumentsContract.createDocument(resolver, parentUri, mime, name)
         } catch (t: Throwable) {
-            throw SaveException("无法在所选文件夹创建文件：${t.message ?: t.javaClass.simpleName}")
-        } ?: throw SaveException("无法在所选文件夹创建文件")
+            throw SaveException("${W.CREATE_FILE_FAILED()} — ${t.message ?: t.javaClass.simpleName}")
+        } ?: throw SaveException(W.CREATE_FILE_FAILED())
 
         try {
             resolver.openOutputStream(documentUri, "wt")?.use { output ->
                 bytes.inputStream().use { TaskExecution.copy(it, output) }
                 output.flush()
-            } ?: throw SaveException("无法写入文件")
+            } ?: throw SaveException(W.WRITE_FILE_FAILED())
             TaskExecution.check()
         } catch (t: Throwable) {
             try { DocumentsContract.deleteDocument(resolver, documentUri) } catch (_: Exception) { }
             if (t is TaskCancelledException) throw t
-            throw SaveException("写入文件失败：${t.message ?: t.javaClass.simpleName}")
+            throw SaveException("${W.WRITE_FILE_FAILED()} — ${t.message ?: t.javaClass.simpleName}")
         }
     }
 

@@ -76,6 +76,14 @@ object FeatureRegistry {
                 }
             }
         }
+        com.heihun.pixivplus.core.i18n.I18n.addListener {
+            com.heihun.pixivplus.core.task.TaskManager.refreshNotifications()
+            for (feature in features) try {
+                feature.onLanguageChanged(host)
+            } catch (t: Throwable) {
+                ModuleLog.e("FeatureRegistry", "${feature.id} language refresh failed", t)
+            }
+        }
     }
 
     fun features(): List<FeatureModule> = features

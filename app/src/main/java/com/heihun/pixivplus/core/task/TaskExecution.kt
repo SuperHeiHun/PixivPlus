@@ -1,5 +1,6 @@
 package com.heihun.pixivplus.core.task
 
+import com.heihun.pixivplus.core.i18n.CommonText
 import java.io.Closeable
 import java.io.InputStream
 import java.io.OutputStream
@@ -7,7 +8,7 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
 
-class TaskCancelledException : CancellationException("任务已取消")
+class TaskCancelledException : CancellationException(CommonText.CANCELLED())
 
 /** 合作式取消：中断任务线程，同时关闭登记的连接，打断阻塞网络读取。 */
 class CancellationToken {
@@ -34,13 +35,17 @@ class CancellationToken {
 }
 
 object TaskExecution {
-    data class Context(val token: CancellationToken, val progress: (String) -> Unit)
+    data class Progress(val message: String, val done: Int, val total: Int)
+    data class Context(val token: CancellationToken, val progress: (Progress) -> Unit)
     private val local = ThreadLocal<Context?>()
     fun current(): Context? = local.get()
     fun check() { local.get()?.token?.check() }
     fun register(resource: Closeable) { local.get()?.token?.register(resource); check() }
     fun unregister(resource: Closeable) { local.get()?.token?.unregister(resource) }
-    fun progress(message: String) { check(); local.get()?.progress?.invoke(message) }
+    fun progress(message: String, done: Int = 0, total: Int = 0) {
+        check()
+        local.get()?.progress?.invoke(Progress(message, done, total))
+    }
     fun <T> withContext(context: Context?, work: () -> T): T {
         if (context == null) return work()
         val previous = local.get()

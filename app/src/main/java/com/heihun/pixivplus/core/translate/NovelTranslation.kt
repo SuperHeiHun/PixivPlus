@@ -1,6 +1,7 @@
 package com.heihun.pixivplus.core.translate
 
 import com.heihun.pixivplus.core.config.ConfigStore
+import com.heihun.pixivplus.core.i18n.WorkText as W
 import com.heihun.pixivplus.core.novel.NovelBlock
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorCompletionService
@@ -15,7 +16,7 @@ object NovelTranslation {
     ): List<NovelText.Line> {
         val lines = NovelText.buildLines(blocks)
         val groups = NovelText.group(lines)
-        if (groups.isEmpty()) throw IllegalStateException("没有可翻译的文本")
+        if (groups.isEmpty()) throw IllegalStateException(W.NOTHING_TO_TRANSLATE())
         val workers = Executors.newFixedThreadPool(minOf(3, groups.size)) { task ->
             Thread(task, "plp-novel-translate").apply { isDaemon = true }
         }
@@ -32,7 +33,7 @@ object NovelTranslation {
             for (index in groups.indices) {
                 com.heihun.pixivplus.core.task.TaskExecution.check()
                 val (group, result) = completed.take().get()
-                val text = result.text ?: throw IllegalStateException(result.error ?: "翻译请求失败")
+                val text = result.text ?: throw IllegalStateException(result.error ?: W.TRANSLATION_REQUEST_FAILED())
                 val outputs = ArrayList(text.split('\n').map { it.trim() })
                 while (outputs.isNotEmpty() && outputs.last().isEmpty()) outputs.removeAt(outputs.size - 1)
                 group.outputs.addAll(if (outputs.isEmpty()) listOf("") else outputs)

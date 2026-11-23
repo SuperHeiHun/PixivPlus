@@ -4,7 +4,7 @@ plugins {
 }
 
 // The default app/build directory is held by a stale handle on this machine; use a dedicated output root.
-layout.buildDirectory.set(layout.projectDirectory.dir("build-out"))
+layout.buildDirectory.set(layout.projectDirectory.dir(providers.gradleProperty("plp.buildDirectory").getOrElse("build-out")))
 
 // Optional release signing material supplied by CI (GitHub Actions secrets).
 val keystorePath = providers.environmentVariable("PLP_KEYSTORE_PATH").orNull
@@ -70,6 +70,11 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+    }
+
+    sourceSets.getByName("test").resources.apply {
+        srcDir("src/main")
+        include("assets/pixivplus/i18n/*.json")
     }
 }
 

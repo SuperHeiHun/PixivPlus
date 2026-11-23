@@ -6,6 +6,8 @@ import android.view.Menu
 import android.widget.Toast
 import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.config.ConfigKeys
+import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.WorkText as W
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.media.DownloadJobs
 import com.heihun.pixivplus.core.media.DownloadPlan
@@ -51,6 +53,13 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
         Thread(task, "plp-media-save").apply { isDaemon = true }
     }
 
+    override fun onLanguageChanged(host: Host) {
+        currentActivity?.window?.decorView?.let { view ->
+            view.removeCallbacks(poll)
+            view.post(poll)
+        }
+    }
+
     override fun hook(host: Host) {
         CurrentWorkHook.install(host, displayName) { entity, id, _ ->
             if (isIllust(entity)) {
@@ -58,10 +67,10 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
                 entities[id] = entity
             }
         }
-        WorkPopupHooks.register(host, "保存原图 / ZIP", { isEnabled(ConfigStoreRegistry.store) && isIllust(it) }) { activity, entity ->
+        WorkPopupHooks.register(host, { W.SAVE_ORIGINAL_IMAGES() }, { isEnabled(ConfigStoreRegistry.store) && isIllust(it) }) { activity, entity ->
             prepareOriginals(activity, idOf(entity), entity)
         }
-        WorkPopupHooks.register(host, "保存 GIF", { isEnabled(ConfigStoreRegistry.store) && isUgoira(it) }) { activity, entity ->
+        WorkPopupHooks.register(host, { W.SAVE_GIF() }, { isEnabled(ConfigStoreRegistry.store) && isUgoira(it) }) { activity, entity ->
             prepareGif(activity, idOf(entity), entity)
         }
         MenuHooks.installClickHook(host, methods, displayName) { item ->
@@ -105,9 +114,9 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
                 for (toolbar in MenuHooks.findToolbars(activity.window.decorView)) {
                     val menu = MenuHooks.readMenu(toolbar) ?: continue
                     if (isEnabled(ConfigStoreRegistry.store)) {
-                        if (menu.findItem(SAVE_ORIGINAL) == null) menu.add(Menu.NONE, SAVE_ORIGINAL, FeatureMenuOrder.SAVE_ORIGINAL, "保存原图 / ZIP")
+                        MenuHooks.ensureItem(menu, SAVE_ORIGINAL, FeatureMenuOrder.SAVE_ORIGINAL, W.SAVE_ORIGINAL_IMAGES())
                         if (entity != null && isUgoira(entity)) {
-                            if (menu.findItem(SAVE_GIF) == null) menu.add(Menu.NONE, SAVE_GIF, FeatureMenuOrder.SAVE_GIF, "保存 GIF")
+                            MenuHooks.ensureItem(menu, SAVE_GIF, FeatureMenuOrder.SAVE_GIF, W.SAVE_GIF())
                         } else menu.removeItem(SAVE_GIF)
                     } else { menu.removeItem(SAVE_ORIGINAL); menu.removeItem(SAVE_GIF) }
                 }
@@ -132,12 +141,12 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
     }
 
     private fun prepareOriginals(activity: Activity, id: Long, entity: Any?) {
-        if (id <= 0) { toast(activity, "未获取到当前作品，请等详情加载后重试"); return }
-        runJob(activity, "正在读取原图信息…", {
+        if (id <= 0) { toast(activity, W.WORK_NOT_READY()); return }
+        runJob(activity, W.READ_ORIGINALS(), {
             val store = ConfigStoreRegistry.store
             MediaRepository.info(store, id, entity) to MediaRepository.originals(store, id, entity)
         }) { (info, images) ->
-            ChoiceDialog.show(activity, "选择保存图片（共 ${images.size} 张）", listOf("全部保存", "自定义选择（图片预览）"), -1) { which ->
+            ChoiceDialog.show(activity, W.CHOOSE_IMAGES(images.size), listOf(W.SAVE_ALL_IMAGES(), W.PICK_IMAGES_PREVIEWS()), -1) { which ->
                 if (which == 0) chooseFormat(activity, info, images)
                 else ImageSelectionDialog.show(activity, images, { it.previewUrl ?: it.url }) { pages ->
                     chooseFormat(activity, info, images.filter { it.page in pages })
@@ -147,12 +156,12 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
     }
 
     private fun chooseFormat(activity: Activity, info: MediaInfo, images: List<OriginalImage>) {
-        ChoiceDialog.show(activity, "保存格式（${images.size} 张）", listOf("保存原图到作品文件夹", "打包为 ZIP"), -1) { which ->
+        ChoiceDialog.show(activity, W.CHOOSE_FORMAT(images.size), listOf(W.ONLY_ORIGINALS(), W.SAVE_ZIP()), -1) { which ->
             val store = ConfigStoreRegistry.store
             val stem = try {
                 MediaNames.stem(info.author, info.title, info.id, store.get(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE))
             } catch (_: IllegalArgumentException) {
-                toast(activity, "保存命名无效，请在「插画与动图保存 → 自定义保存命名」中修改或恢复默认")
+                toast(activity, W.FIX_FILENAME())
                 return@show
             }
             val linksText = if (store.get(ConfigKeys.ILLUST_SAVE_INCLUDE_LINKS)) info.linksText() else null
@@ -165,10 +174,10 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
     }
 
     private fun prepareGif(activity: Activity, id: Long, entity: Any?) {
-        if (id <= 0) { toast(activity, "未获取到当前动图"); return }
-        ConfirmDialog.show(activity, "保存 GIF", "将下载 ugoira 帧并转换为循环 GIF，保留每帧时长。\nGIF 使用 256 色，色彩会与原图有所差异。", "保存") {
+        if (id <= 0) { toast(activity, W.NO_UGOIRA()); return }
+        ConfirmDialog.show(activity, W.SAVE_GIF(), W.GIF_INFO(), C.SAVE()) {
             chooseFolder(activity) { folder ->
-                runJob(activity, "正在准备动图…", {
+                runJob(activity, W.PREPARE_UGOIRA(), {
                     val store = ConfigStoreRegistry.store
                     val info = MediaRepository.info(store, id, entity)
                     val stem = MediaNames.stem(info.author, info.title, id, store.get(ConfigKeys.ILLUST_SAVE_NAME_TEMPLATE))
@@ -182,15 +191,15 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
         val store = ConfigStoreRegistry.store
         val folder = store.get(ConfigKeys.ILLUST_SAVE_FOLDER_URI)
         if (folder.isNotBlank()) { onReady(Uri.parse(folder)); return }
-        toast(activity, "首次保存请选择保存位置")
+        toast(activity, W.FIRST_SAVE())
         ActivityResultBridge.pickFolder(activity) { resultActivity, uri ->
-            if (uri == null) toast(resultActivity, "未选择保存位置，已取消")
+            if (uri == null) toast(resultActivity, W.FOLDER_CANCELLED())
             else { store.put(ConfigKeys.ILLUST_SAVE_FOLDER_URI, uri.toString()); onReady(uri) }
         }
     }
 
     private fun <T> runJob(activity: Activity, initial: String, work: () -> T, done: (T) -> Unit) {
-        if (!busy.compareAndSet(false, true)) { toast(activity, "正在保存中，请稍候…"); return }
+        if (!busy.compareAndSet(false, true)) { toast(activity, W.SAVE_BUSY()); return }
         toast(activity, initial)
         executor.execute {
             try {
@@ -202,8 +211,8 @@ class IllustSaveFeature : ConfigurableFeature("illust_save", "插画与动图保
                 if (t !is Exception && t !is OutOfMemoryError) throw t
                 ModuleLog.w(displayName, "media save failed", t)
                 activity.runOnUiThread {
-                    val reason = if (t is OutOfMemoryError) "内存不足，请减少保存页数或选择较小的动图" else t.message ?: t.javaClass.simpleName
-                    toast(activity, "保存失败：$reason")
+                    val reason = if (t is OutOfMemoryError) W.SAVE_NO_MEMORY() else t.message ?: t.javaClass.simpleName
+                    toast(activity, C.SAVE_FAILED(reason))
                 }
             } finally { busy.set(false) }
         }

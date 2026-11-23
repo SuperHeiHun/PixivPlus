@@ -10,11 +10,14 @@ import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.WorkContext
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.config.RuleAppender
+import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.WorkText as W
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.util.CurrentWorkHook
 import com.heihun.pixivplus.core.util.DetailPagerResolver
 import com.heihun.pixivplus.core.util.EntityReader
 import com.heihun.pixivplus.core.util.FeatureMenuOrder
+import com.heihun.pixivplus.core.util.MenuHooks
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.core.util.WorkPopupHooks
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
@@ -67,8 +70,10 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
 
     private val detailDepth = java.util.concurrent.atomic.AtomicInteger(0)
 
+    override fun onLanguageChanged(host: Host) { refreshMenuItems() }
+
     override fun hook(host: Host) {
-        WorkPopupHooks.register(host, "屏蔽作者", { isEnabled(ConfigStoreRegistry.store) }) { activity, entity ->
+        WorkPopupHooks.register(host, { W.MUTE_CREATOR() }, { isEnabled(ConfigStoreRegistry.store) }) { activity, entity ->
             val snapshot = com.heihun.pixivplus.core.WorkSnapshot(
                 id = (ReflectUtil.invoke(entity, ReflectUtil.findMethod(entity.javaClass, "getId")) as? Long) ?: 0L,
                 type = EntityReader.type(entity, "ILLUST"),
@@ -414,19 +419,9 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
     }
 
     private fun addMenuItems(menu: Menu, toolbar: View? = null): Boolean {
-        var changed = false
-        if (menu.findItem(ID_BLOCK_BY_TAG) == null) {
-            menu.add(Menu.NONE, ID_BLOCK_BY_TAG, FeatureMenuOrder.BLOCK_TAG, "按Tag屏蔽")
-            changed = true
-        }
-        if (menu.findItem(ID_BLOCK_AUTHOR) == null) {
-            menu.add(Menu.NONE, ID_BLOCK_AUTHOR, FeatureMenuOrder.BLOCK_AUTHOR, "屏蔽当前作者")
-            changed = true
-        }
-        if (menu.findItem(ID_BLOCK_TITLE) == null) {
-            menu.add(Menu.NONE, ID_BLOCK_TITLE, FeatureMenuOrder.BLOCK_TITLE, "屏蔽当前标题")
-            changed = true
-        }
+        var changed = MenuHooks.ensureItem(menu, ID_BLOCK_BY_TAG, FeatureMenuOrder.BLOCK_TAG, W.MUTE_BY_TAG())
+        changed = MenuHooks.ensureItem(menu, ID_BLOCK_AUTHOR, FeatureMenuOrder.BLOCK_AUTHOR, W.MUTE_CURRENT_CREATOR()) || changed
+        changed = MenuHooks.ensureItem(menu, ID_BLOCK_TITLE, FeatureMenuOrder.BLOCK_TITLE, W.MUTE_TITLE()) || changed
         if (changed) {
             val marker = toolbar?.let { "@${Integer.toHexString(System.identityHashCode(it))}" }.orEmpty()
             ModuleLog.i(displayName, "quick-block menu items added$marker (total=${menu.size()})")
@@ -443,13 +438,13 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
             return
         }
         if (tags.isEmpty()) {
-            toast(activity, "未获取到当前作品的标签")
+            toast(activity, W.NO_TAGS())
             return
         }
         try {
             TagSelectDialog.show(activity, tags) { selected ->
                 if (selected.isEmpty()) {
-                    toast(activity, "未选择标签")
+                    toast(activity, W.NO_SELECTED_TAGS())
                     return@show
                 }
                 val current = ConfigStoreRegistry.store.get(ConfigKeys.FILTER_TAGS)
@@ -457,7 +452,7 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
                     ConfigKeys.FILTER_TAGS,
                     RuleAppender.append(current, selected)
                 )
-                toast(activity, "已添加 ${selected.size} 个屏蔽标签")
+                toast(activity, W.TAGS_ADDED(selected.size))
                 ModuleLog.i(displayName, "block-by-tag appended ${selected.size} tags: ${selected.joinToString(", ")}")
             }
         } catch (t: Throwable) {
@@ -475,26 +470,24 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
         val fallbackName = snapshot?.authorName?.takeIf { it.isNotEmpty() }
             ?: snapshot?.authorAccount?.takeIf { it.isNotEmpty() }
         if (authorId == null && fallbackName.isNullOrEmpty()) {
-            toast(activity, "未获取到当前作者")
+            toast(activity, W.NO_CREATOR())
             return
         }
         // 优先 UID 精确规则；实体缺失时退回名称 / 账号（旧规则仍按名称匹配）。
         val rule = authorId?.toString() ?: fallbackName!!
         if (ruleExists(ConfigStoreRegistry.store.get(ConfigKeys.FILTER_AUTHORS), rule)) {
-            toast(activity, "该作者已在屏蔽规则中")
+            toast(activity, W.CREATOR_ALREADY_MUTED())
             return
         }
         val message = if (authorId != null) {
-            "将按 UID $authorId 精确屏蔽作者「${fallbackName ?: "未知"}」，" +
-                "其作品不再出现在首页推荐、搜索等列表中。\n可在 设置 → 过滤规则 中撤销。"
+            W.MUTE_UID_NOTE(authorId, fallbackName ?: C.UNKNOWN())
         } else {
-            "将按名称屏蔽作者「$fallbackName」，其作品不再出现在首页推荐、搜索等列表中。\n" +
-                "可在 设置 → 过滤规则 中撤销。"
+            W.MUTE_NAME_NOTE(fallbackName)
         }
-        ConfirmDialog.show(activity, "屏蔽当前作者", message, "屏蔽") {
+        ConfirmDialog.show(activity, W.MUTE_CURRENT_CREATOR(), message, W.MUTE()) {
             val current = ConfigStoreRegistry.store.get(ConfigKeys.FILTER_AUTHORS)
             ConfigStoreRegistry.store.put(ConfigKeys.FILTER_AUTHORS, RuleAppender.append(current, listOf(rule)))
-            toast(activity, if (authorId != null) "已屏蔽作者 UID：$authorId" else "已屏蔽作者：$fallbackName")
+            toast(activity, if (authorId != null) W.MUTED_UID(authorId) else W.MUTED_CREATOR(fallbackName))
             ModuleLog.i(displayName, "block-by-author appended rule=$rule")
         }
     }
@@ -503,22 +496,22 @@ class DetailMenuFeature : ConfigurableFeature("blockmenu", "详情页快捷屏�
         val activity = currentActivity ?: return
         val title = resolveSnapshot()?.title?.takeIf { it.isNotEmpty() }
         if (title.isNullOrEmpty()) {
-            toast(activity, "未获取到当前标题")
+            toast(activity, W.NO_TITLE())
             return
         }
         val current = ConfigStoreRegistry.store.get(ConfigKeys.FILTER_KEYWORDS)
         if (ruleExists(current, title)) {
-            toast(activity, "该标题已在屏蔽规则中")
+            toast(activity, W.TITLE_ALREADY_MUTED())
             return
         }
         ConfirmDialog.show(
             activity,
-            "屏蔽当前标题",
-            "将把标题「$title」加入关键词屏蔽规则，标题含该关键词的作品都会被隐藏。\n可在 设置 → 过滤规则 中撤销。",
-            "屏蔽"
+            W.MUTE_TITLE(),
+            W.MUTE_TITLE_NOTE(title),
+            W.MUTE()
         ) {
             ConfigStoreRegistry.store.put(ConfigKeys.FILTER_KEYWORDS, RuleAppender.append(current, listOf(title)))
-            toast(activity, "已屏蔽标题：$title")
+            toast(activity, W.MUTED_TITLE(title))
             ModuleLog.i(displayName, "block-by-title appended title=$title")
         }
     }

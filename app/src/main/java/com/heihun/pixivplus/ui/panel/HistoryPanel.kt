@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.Dialog
 import android.content.Context
 import android.text.TextUtils
-import android.text.format.DateUtils
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -14,6 +13,10 @@ import android.widget.Toast
 import com.heihun.pixivplus.core.Runtime
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.db.HistoryDao
+import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.I18n
+import com.heihun.pixivplus.core.i18n.PanelText as P
+import com.heihun.pixivplus.core.i18n.SettingsText as S
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.ui.UiKit
@@ -31,14 +34,14 @@ object HistoryPanel {
         }
         val dao = Runtime.historyDaoOrNull()
         val total = dao?.count(null) ?: 0
-        container.addView(UiKit.infoRow(context, "记录条数", total.toString()))
-        container.addView(UiKit.infoRow(context, "保留策略", retentionLabel()))
+        container.addView(UiKit.infoRow(context, P.HISTORY_COUNT(), total.toString()))
+        container.addView(UiKit.infoRow(context, P.RETENTION_POLICY(), retentionLabel()))
         container.addView(UiKit.divider(context, 16, 16))
         container.addView(
-            UiKit.buttonRow(context, "查看浏览历史") {
+            UiKit.buttonRow(context, P.OPEN_HISTORY()) {
                 val activity = context as? Activity
                 if (activity == null) {
-                    Toast.makeText(context, "当前页面无法打开历史列表", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, P.HISTORY_UNAVAILABLE(), Toast.LENGTH_SHORT).show()
                 } else {
                     showDialog(activity)
                 }
@@ -77,7 +80,7 @@ object HistoryPanel {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         texts.addView(TextView(activity).apply {
-            text = "浏览历史"
+            text = S.HISTORY()
             textSize = 22f
             setTextColor(palette.onSurface)
             typeface = Md3.medium
@@ -113,11 +116,11 @@ object HistoryPanel {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(UiKit.dp(activity, 16), UiKit.dp(activity, 4), UiKit.dp(activity, 16), UiKit.dp(activity, 4))
         }
-        val clearButton = UiKit.dangerTextButton(activity, "清空全部历史")
+        val clearButton = UiKit.dangerTextButton(activity, P.CLEAR_HISTORY())
         clearButton.setOnClickListener {
             try {
                 val removed = Runtime.historyDaoOrNull()?.clear(null) ?: 0
-                Toast.makeText(activity, "已清空 $removed 条记录", Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, P.HISTORY_CLEARED(removed), Toast.LENGTH_SHORT).show()
                 ModuleLog.i(TAG, "history cleared by user ($removed rows)")
                 refresh(activity, listContainer, summary)
             } catch (t: Throwable) {
@@ -136,17 +139,17 @@ object HistoryPanel {
         val dao = Runtime.historyDaoOrNull()
         val total = dao?.count(null) ?: 0
         summary.text = if (total == 0) {
-            "暂无记录 · 保留策略：${retentionLabel()}"
+            P.EMPTY_HISTORY_SUMMARY(retentionLabel())
         } else {
-            "共 $total 条 · 保留策略：${retentionLabel()}"
+            P.HISTORY_SUMMARY(total, retentionLabel())
         }
         if (dao == null) {
-            listContainer.addView(UiKit.emptyState(activity, "数据库未初始化"))
+            listContainer.addView(UiKit.emptyState(activity, P.DATABASE_UNAVAILABLE()))
             return
         }
         val items = dao.queryAll(MAX_ROWS)
         if (items.isEmpty()) {
-            listContainer.addView(UiKit.emptyState(activity, "暂无浏览记录"))
+            listContainer.addView(UiKit.emptyState(activity, P.NO_BROWSING_HISTORY()))
             return
         }
         for (item in items) {
@@ -165,7 +168,7 @@ object HistoryPanel {
             gravity = Gravity.CENTER_VERTICAL
         }
         top.addView(UiKit.chip(context, typeLabel(item.type)))
-        val label = item.title?.takeIf { it.isNotBlank() } ?: "(无标题)"
+        val label = item.title?.takeIf { it.isNotBlank() } ?: P.UNTITLED()
         top.addView(TextView(context).apply {
             text = label
             textSize = 15f
@@ -183,7 +186,7 @@ object HistoryPanel {
                 append(item.authorName)
                 append(" · ")
             }
-            append(DateUtils.getRelativeTimeSpanString(item.visitedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS))
+            append(I18n.dateTime(item.visitedAt))
         }
         row.addView(TextView(context).apply {
             text = meta
@@ -203,18 +206,18 @@ object HistoryPanel {
 
     private fun typeLabel(type: String): String {
         return when (type) {
-            "MANGA" -> "漫画"
-            "NOVEL" -> "小说"
-            else -> "插画"
+            "MANGA" -> P.MANGA()
+            "NOVEL" -> P.NOVEL()
+            else -> P.ILLUSTRATION()
         }
     }
 
     private fun retentionLabel(): String {
         return try {
             val days = ConfigStoreRegistry.store.get(ConfigKeys.HISTORY_RETENTION_DAYS).toIntOrNull() ?: 30
-            if (days <= 0) "永久保留" else "$days 天"
+            if (days <= 0) S.KEEP_FOREVER() else P.DAYS(days)
         } catch (_: Throwable) {
-            "未知"
+            C.UNKNOWN()
         }
     }
 }

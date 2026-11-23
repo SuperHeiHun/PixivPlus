@@ -12,13 +12,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Pixiv 6.192.1 gx8.onEvent 的作品操作弹窗；只修改该事件同步创建的列表。 */
 object WorkPopupHooks {
-    private data class Action(val label: String, val enabled: (Any) -> Boolean, val click: (Activity, Any) -> Unit)
+    private data class Action(val label: () -> String, val enabled: (Any) -> Boolean, val click: (Activity, Any) -> Unit)
     private data class Target(val activity: Activity, val entity: Any)
     private val actions = CopyOnWriteArrayList<Action>()
     private val target = ThreadLocal<Target?>()
     private val installed = AtomicBoolean(false)
 
-    fun register(host: Host, label: String, enabled: (Any) -> Boolean, click: (Activity, Any) -> Unit) {
+    fun register(host: Host, label: () -> String, enabled: (Any) -> Boolean, click: (Activity, Any) -> Unit) {
         actions.add(Action(label, enabled, click))
         if (!installed.compareAndSet(false, true)) return
         val events = ReflectUtil.loadClass(host.classLoader, "gx8")
@@ -51,7 +51,7 @@ object WorkPopupHooks {
                     val extra = actions.filter { it.enabled(current.entity) }
                     if (extra.isEmpty()) return
                     val merged = labels.map { it as CharSequence }.toMutableList()
-                    merged.addAll(extra.map { it.label })
+                    merged.addAll(extra.map { it.label() })
                     val itemsField = ReflectUtil.findField(params.javaClass, "p") ?: return
                     val clickField = ReflectUtil.findField(params.javaClass, "r") ?: return
                     itemsField.isAccessible = true

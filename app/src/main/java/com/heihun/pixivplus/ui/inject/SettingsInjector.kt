@@ -11,6 +11,7 @@ import com.heihun.pixivplus.adapt.anchors.SettingsAnchors
 import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.i18n.DrawerText as D
+import com.heihun.pixivplus.core.i18n.I18n
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
@@ -27,8 +28,10 @@ object SettingsInjector {
 
     /** 宿主「屏蔽设定」页（抽屉菜单「屏蔽设定」入口），底部原广告容器可复用为模块入口。 */
     private const val MUTE_ACTIVITY_CLASS = "jp.pxv.android.feature.mute.setting.MuteSettingActivity"
+    private val entries = java.util.WeakHashMap<LinearLayout, Boolean>()
 
     fun install() {
+        I18n.addListener(::refreshEntryLabels)
         hookOnCreate(SettingsAnchors.SETTING_ACTIVITY_CLASS) { inject(it) }
         hookOnCreate(MUTE_ACTIVITY_CLASS) { injectMuteEntry(it) }
     }
@@ -67,6 +70,7 @@ object SettingsInjector {
                 D.ENTRY_SUMMARY()
             ) { openPanel(it) }
             row.tag = ROW_TAG
+            entries[row] = false
             container.addView(
                 row,
                 LinearLayout.LayoutParams(
@@ -111,6 +115,7 @@ object SettingsInjector {
                 D.MUTE_ENTRY_SUMMARY()
             ) { openFilterRules(it) }
             row.tag = MUTE_ROW_TAG
+            entries[row] = true
             container.addView(
                 row,
                 LinearLayout.LayoutParams(
@@ -121,6 +126,14 @@ object SettingsInjector {
             ModuleLog.i(TAG, "mute filter entry injected into ad_container")
         } catch (t: Throwable) {
             ModuleLog.e(TAG, "inject mute entry failed", t)
+        }
+    }
+
+    private fun refreshEntryLabels() {
+        for ((row, mute) in entries) {
+            val texts = row.getChildAt(0) as? LinearLayout ?: continue
+            if (mute) (texts.getChildAt(0) as? TextView)?.text = D.MUTE_ENTRY()
+            (texts.getChildAt(1) as? TextView)?.text = if (mute) D.MUTE_ENTRY_SUMMARY() else D.ENTRY_SUMMARY()
         }
     }
 

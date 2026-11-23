@@ -9,6 +9,9 @@ import android.provider.DocumentsContract
 import com.heihun.pixivplus.BuildConfig
 import com.heihun.pixivplus.core.Runtime
 import com.heihun.pixivplus.core.config.ConfigKeys
+import com.heihun.pixivplus.core.i18n.BackupText as B
+import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.PanelText as P
 import com.heihun.pixivplus.core.db.LocalDatabase
 import com.heihun.pixivplus.core.log.ModuleLog
 import org.json.JSONArray
@@ -183,7 +186,7 @@ object BackupManager {
             if (root.optString("format") != FORMAT) return null
             BackupInfo(
                 createdAt = root.optLong("created_at", 0L),
-                moduleVersion = root.optString("module_version", "未知"),
+                moduleVersion = root.optString("module_version").ifBlank { C.UNKNOWN() },
                 configCount = root.optJSONObject("config")?.length() ?: 0,
                 historyCount = root.optJSONArray("history")?.length() ?: 0,
                 authorCount = root.optJSONArray("author_profile")?.length() ?: 0
@@ -292,25 +295,25 @@ object BackupManager {
         val root = try {
             JSONObject(json)
         } catch (_: Throwable) {
-            return RestoreResult(false, "备份文件不是有效的 JSON")
+            return RestoreResult(false, B.BAD_JSON())
         }
         if (root.optString("format") != FORMAT) {
-            return RestoreResult(false, "不是 PixivPlus 备份文件")
+            return RestoreResult(false, B.NOT_BACKUP())
         }
         val version = root.optInt("version", 0)
         if (version <= 0 || version > VERSION) {
-            return RestoreResult(false, "不支持的备份版本：$version")
+            return RestoreResult(false, B.UNSUPPORTED_VERSION(version))
         }
         val database = Runtime.databaseOrNull()
-            ?: return RestoreResult(false, "数据库尚未初始化")
+            ?: return RestoreResult(false, P.DATABASE_UNAVAILABLE())
         val config = Runtime.configOrNull()
-            ?: return RestoreResult(false, "配置尚未初始化")
+            ?: return RestoreResult(false, C.CONFIG_NOT_READY())
 
         val counts = try {
             restoreDatabase(database, root)
         } catch (t: Throwable) {
             ModuleLog.e(TAG, "restore database failed", t)
-            return RestoreResult(false, "恢复数据库失败：${t.message ?: t.javaClass.simpleName}")
+            return RestoreResult(false, B.DB_RESTORE_FAILED(t.message ?: t.javaClass.simpleName))
         }
 
         val configObject = root.optJSONObject("config") ?: JSONObject()
@@ -321,7 +324,7 @@ object BackupManager {
         )
         return RestoreResult(
             true,
-            "恢复完成：配置 $configCount 项、历史 ${counts.first} 条、作者资料 ${counts.second} 条"
+            B.RESTORED(configCount, counts.first, counts.second)
         )
     }
 

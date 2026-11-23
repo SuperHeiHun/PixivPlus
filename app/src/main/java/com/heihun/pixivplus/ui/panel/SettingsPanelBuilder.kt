@@ -25,9 +25,9 @@ import com.heihun.pixivplus.core.backup.WebDavBackup
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.i18n.CommonText as C
 import com.heihun.pixivplus.core.i18n.I18n
+import com.heihun.pixivplus.core.i18n.LanguageText as L
 import com.heihun.pixivplus.core.i18n.SettingsText as S
 import com.heihun.pixivplus.core.i18n.Text
-import com.heihun.pixivplus.core.i18n.UiLanguage
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.net.FilterRules
 import com.heihun.pixivplus.core.net.ProxyMode
@@ -44,6 +44,7 @@ object SettingsPanelBuilder {
 
     enum class Screen(private val titleText: Text, private val subtitleText: Text) {
         MAIN(S.MODULE, S.HOME_SUBTITLE),
+        LANGUAGE(S.LANGUAGE, S.LANGUAGE_HINT),
         FEATURES(S.FEATURES, S.FEATURES_HINT),
         FILTERS(S.FILTERS, S.FILTERS_HINT),
         NOVEL_SAVE(S.NOVEL_SAVE, S.NOVEL_SAVE_HINT),
@@ -101,7 +102,6 @@ object SettingsPanelBuilder {
                         if (deepLinked) dialog.dismiss()
                         else showScreen(Screen.MAIN, fromBack = true)
                     },
-                    { showScreen(screen) },
                     scrollPositions[screen] ?: 0,
                     { activeScroll = it }
                 )
@@ -121,7 +121,12 @@ object SettingsPanelBuilder {
                     false
                 }
             }
-            dialog.setOnDismissListener { scrollPositions.clear() }
+            val onLanguageChanged = { if (dialog.isShowing) showScreen(current) }
+            I18n.addListener(onLanguageChanged)
+            dialog.setOnDismissListener {
+                I18n.removeListener(onLanguageChanged)
+                scrollPositions.clear()
+            }
             showScreen(initialScreen)
             ModuleLog.i(TAG, "panel shown (initial=${initialScreen.name})")
         } catch (t: Throwable) {
@@ -137,7 +142,6 @@ object SettingsPanelBuilder {
         goingBack: Boolean,
         open: (Screen) -> Unit,
         back: () -> Unit,
-        refresh: () -> Unit,
         restoreScrollY: Int,
         onScrollCreated: (ScrollView) -> Unit
     ) {
@@ -175,7 +179,8 @@ object SettingsPanelBuilder {
         UiKit.animateScreenIn(scroll, fromRight = !goingBack)
 
         when (screen) {
-            Screen.MAIN -> buildMainMenu(activity, body, open, refresh)
+            Screen.MAIN -> buildMainMenu(activity, body, open)
+            Screen.LANGUAGE -> LanguagePanel.build(activity, body)
             Screen.FEATURES -> buildFeaturesPage(activity, body)
             Screen.FILTERS -> {
                 val card = UiKit.card(activity)
@@ -207,23 +212,9 @@ object SettingsPanelBuilder {
         }
     }
 
-    private fun buildMainMenu(activity: Activity, body: LinearLayout, open: (Screen) -> Unit, refresh: () -> Unit) {
-        val preference = I18n.preference()
-        val languageLabel = if (preference == UiLanguage.FOLLOW_HOST) S.FOLLOW_HOST_CURRENT(I18n.language().nativeName)
-            else preference.nativeName
+    private fun buildMainMenu(activity: Activity, body: LinearLayout, open: (Screen) -> Unit) {
         val languageCard = UiKit.card(activity)
-        languageCard.addView(UiKit.selectRow(activity, S.LANGUAGE(), languageLabel) {
-            val languages = UiLanguage.entries
-            ChoiceDialog.show(activity, S.LANGUAGE(), languages.map {
-                if (it == UiLanguage.FOLLOW_HOST) S.FOLLOW_HOST() else it.nativeName
-            }, languages.indexOf(preference)) { index ->
-                val selected = languages[index]
-                if (selected != preference) {
-                    putConfig(ConfigKeys.UI_LANGUAGE, selected.tag)
-                    refresh()
-                }
-            }
-        })
+        addMenuRow(languageCard, activity, S.LANGUAGE(), LanguagePanel.summary(), Screen.LANGUAGE, open)
         body.addView(languageCard)
         body.addView(UiKit.paragraph(activity, S.HOME_HINT()))
 

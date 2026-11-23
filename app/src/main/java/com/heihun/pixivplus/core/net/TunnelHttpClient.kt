@@ -1,5 +1,6 @@
 package com.heihun.pixivplus.core.net
 
+import com.heihun.pixivplus.core.i18n.NetworkText as N
 import com.heihun.pixivplus.core.log.ModuleLog
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -224,15 +225,15 @@ internal object TunnelHttpClient {
                 result = FileDownload.read(input, file, url.toString(), maxBytes, progress)
                 RawResponse(result!!.code, ByteArray(0), result!!.location)
             }
-            val response = result ?: throw IOException("下载响应缺失")
+            val response = result ?: throw IOException(N.EMPTY_RESPONSE())
             if (response.complete) return
             if (response.code in 300..399) {
-                if (++redirects > MAX_REDIRECTS || response.location.isNullOrBlank()) throw IOException("下载重定向失败")
+                if (++redirects > MAX_REDIRECTS || response.location.isNullOrBlank()) throw IOException(N.REDIRECT_FAILED())
                 current = URL(current, response.location)
-                if (current.protocol != url.protocol) throw IOException("下载重定向协议变化")
+                if (current.protocol != url.protocol) throw IOException(N.REDIRECT_PROTOCOL())
             }
         }
-        throw IOException("下载分段次数过多，已保留断点")
+        throw IOException(N.SEGMENT_LIMIT())
     }
 
     private fun connectProxy(
@@ -270,7 +271,7 @@ internal object TunnelHttpClient {
 
     private fun socks4Handshake(socket: Socket, host: String, port: Int, userId: String) {
         val userBytes = userId.toByteArray(Charsets.UTF_8)
-        if (userBytes.size > 255) throw IOException("SOCKS4 用户 ID 过长")
+        if (userBytes.size > 255) throw IOException(N.SOCKS4_USER_ID())
         val output = socket.getOutputStream()
         val ipv4 = resolveIpv4(host)
         output.write(0x04)
@@ -296,10 +297,10 @@ internal object TunnelHttpClient {
         val version = reply[0].toInt() and 0xFF
         val status = reply[1].toInt() and 0xFF
         if (version != 0 && version != 4) {
-            throw IOException("SOCKS4 响应版本异常: $version")
+            throw IOException("${N.PROXY_BAD_VERSION("SOCKS4")} ($version)")
         }
         if (status != 0x5A) {
-            throw IOException("SOCKS4 代理拒绝连接（code=$status）")
+            throw IOException(N.PROXY_REFUSED("SOCKS4", status))
         }
     }
 
@@ -323,16 +324,16 @@ internal object TunnelHttpClient {
         val greeting = ByteArray(2)
         readFully(input, greeting)
         if ((greeting[0].toInt() and 0xFF) != 0x05) {
-            throw IOException("SOCKS5 响应版本异常")
+            throw IOException(N.PROXY_BAD_VERSION("SOCKS5"))
         }
         when (greeting[1].toInt() and 0xFF) {
             0x00 -> Unit
             0x02 -> {
-                if (!hasCredentials) throw IOException("SOCKS5 代理要求认证")
+                if (!hasCredentials) throw IOException(N.SOCKS5_NEEDS_AUTH())
                 val userBytes = username.toByteArray(Charsets.UTF_8)
                 val passBytes = password.toByteArray(Charsets.UTF_8)
                 if (userBytes.size > 255 || passBytes.size > 255) {
-                    throw IOException("SOCKS5 用户名或密码过长")
+                    throw IOException(N.SOCKS5_CREDENTIAL_LIMIT())
                 }
                 output.write(0x01)
                 output.write(userBytes.size)
@@ -343,18 +344,18 @@ internal object TunnelHttpClient {
                 val authReply = ByteArray(2)
                 readFully(input, authReply)
                 if ((authReply[0].toInt() and 0xFF) != 0x01) {
-                    throw IOException("SOCKS5 认证响应版本异常")
+                    throw IOException(N.SOCKS5_BAD_AUTH_VERSION())
                 }
                 if ((authReply[1].toInt() and 0xFF) != 0x00) {
-                    throw IOException("SOCKS5 认证失败（code=${authReply[1].toInt() and 0xFF}）")
+                    throw IOException(N.SOCKS5_AUTH_FAILED(authReply[1].toInt() and 0xFF))
                 }
             }
-            else -> throw IOException("SOCKS5 代理不接受当前认证方式（method=${greeting[1].toInt() and 0xFF}）")
+            else -> throw IOException(N.SOCKS5_AUTH_UNSUPPORTED(greeting[1].toInt() and 0xFF))
         }
 
         val hostBytes = host.toByteArray(Charsets.UTF_8)
         if (hostBytes.size > 255) {
-            throw IOException("目标主机名过长")
+            throw IOException(N.HOSTNAME_TOO_LONG())
         }
         output.write(byteArrayOf(0x05, 0x01, 0x00, 0x03, hostBytes.size.toByte()))
         output.write(hostBytes)
@@ -365,21 +366,21 @@ internal object TunnelHttpClient {
         val head = ByteArray(4)
         readFully(input, head)
         if ((head[0].toInt() and 0xFF) != 0x05) {
-            throw IOException("SOCKS5 响应版本异常")
+            throw IOException(N.PROXY_BAD_VERSION("SOCKS5"))
         }
         val status = head[1].toInt() and 0xFF
         if (status != 0x00) {
-            throw IOException("SOCKS5 代理拒绝连接（code=$status）")
+            throw IOException(N.PROXY_REFUSED("SOCKS5", status))
         }
         when (head[3].toInt() and 0xFF) {
             0x01 -> readFully(input, ByteArray(6))
             0x03 -> {
                 val length = input.read()
-                if (length < 0) throw IOException("SOCKS5 响应被截断")
+                if (length < 0) throw IOException(N.SOCKS5_TRUNCATED())
                 readFully(input, ByteArray(length + 2))
             }
             0x04 -> readFully(input, ByteArray(18))
-            else -> throw IOException("SOCKS5 未知地址类型")
+            else -> throw IOException(N.SOCKS5_BAD_ADDRESS_TYPE())
         }
     }
 
@@ -399,18 +400,18 @@ internal object TunnelHttpClient {
         output.flush()
 
         val input = BufferedInputStream(socket.getInputStream())
-        val statusLine = readLine(input) ?: throw IOException("HTTP 代理未返回响应")
+        val statusLine = readLine(input) ?: throw IOException(N.PROXY_EMPTY())
         val code = statusLine.split(' ').getOrNull(1)?.toIntOrNull()
-            ?: throw IOException("HTTP 代理返回无效状态行: $statusLine")
+            ?: throw IOException(N.PROXY_BAD_STATUS())
         while (true) {
             val line = readLine(input) ?: break
             if (line.isEmpty()) break
         }
         if (code == 407) {
-            throw IOException("HTTP 代理认证失败（407）")
+            throw IOException(N.PROXY_AUTH_HTTP())
         }
         if (code !in 200..299) {
-            throw IOException("HTTP 代理 CONNECT 失败（HTTP $code）")
+            throw IOException(N.PROXY_CONNECT_FAILED(code))
         }
     }
 
@@ -486,9 +487,9 @@ internal object TunnelHttpClient {
     }
 
     private fun readResponse(input: BufferedInputStream, maxBytes: Int): RawResponse {
-        val statusLine = readLine(input) ?: throw IOException("空响应")
+        val statusLine = readLine(input) ?: throw IOException(N.EMPTY_RESPONSE())
         val code = statusLine.split(' ').getOrNull(1)?.toIntOrNull()
-            ?: throw IOException("无效状态行: $statusLine")
+            ?: throw IOException(N.BAD_STATUS_LINE())
         val headers = LinkedHashMap<String, String>()
         while (true) {
             val line = readLine(input) ?: break
@@ -550,7 +551,7 @@ internal object TunnelHttpClient {
         while (output.size() < maxBytes) {
             val line = readLine(input) ?: break
             val size = line.substringBefore(';').trim().toIntOrNull(16)
-                ?: throw IOException("无效分块长度")
+                ?: throw IOException(N.BAD_CHUNK_LENGTH())
             if (size == 0) {
                 while (true) {
                     val trailer = readLine(input) ?: break
@@ -598,7 +599,7 @@ internal object TunnelHttpClient {
         var offset = 0
         while (offset < buffer.size) {
             val read = input.read(buffer, offset, buffer.size - offset)
-            if (read < 0) throw IOException("连接被代理关闭")
+            if (read < 0) throw IOException(N.PROXY_CLOSED())
             offset += read
         }
     }

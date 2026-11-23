@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "locale": "ja",
+  "name": "日本語（サンプル）",
+  "strings": {
+    "settings.language": "表示言語",
+    "settings.follow_host": "pixiv に合わせる",
+    "settings.follow_host_current": "pixiv に合わせる（%1$s）",
+    "settings.home_subtitle": "ローカル拡張設定",
+    "language.packs": "インポート済み言語パック",
+    "language.import": "JSON 言語パックをインポート",
+    "language.imported": "言語パックをインポートしました：%1$s",
+    "language.remove": "言語パックを削除",
+    "common.cancel": "キャンセル",
+    "common.save": "保存",
+    "work.page_number": "%1$d ページ"
+  }
+}

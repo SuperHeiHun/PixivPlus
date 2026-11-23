@@ -100,6 +100,7 @@ object ConfigKeys {
 
     /** 不写入备份文件的敏感 / 设备相关配置；恢复时保留本机现有值。 */
     val LOCAL_ONLY_NAMES = setOf(
+        UI_LANGUAGE.name,
         PROXY_PASSWORD.name,
         WEBDAV_PASSWORD.name,
         BACKUP_FOLDER_URI.name,

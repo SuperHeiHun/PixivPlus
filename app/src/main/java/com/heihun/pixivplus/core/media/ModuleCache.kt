@@ -1,6 +1,7 @@
 package com.heihun.pixivplus.core.media
 
 import android.content.Context
+import com.heihun.pixivplus.core.i18n.PanelText as P
 import com.heihun.pixivplus.core.task.TaskManager
 import com.heihun.pixivplus.core.translate.Translator
 import java.io.File
@@ -25,13 +26,13 @@ object ModuleCache {
         return roots(context).sumOf { bytes(it) }
     }
     fun clear(context: Context): Long = synchronized(DownloadJobs.cacheLock) {
-        check(TaskManager.activeTasks().isEmpty()) { "请先取消或等待正在进行的任务结束，再清理缓存" }
+        check(TaskManager.activeTasks().isEmpty()) { P.CACHE_ACTIVE() }
         val root = context.cacheDir.canonicalFile
         val before = size(context)
         fun remove(file: File) {
             if (file.canonicalFile != file.absoluteFile || !file.path.startsWith(root.path + File.separator)) return
             safeChildren(file, root).forEach(::remove)
-            check(!file.exists() || file.delete()) { "部分模块缓存无法清理" }
+            check(!file.exists() || file.delete()) { P.CACHE_PARTIAL() }
         }
         roots(context).forEach(::remove)
         Translator.clearCache()

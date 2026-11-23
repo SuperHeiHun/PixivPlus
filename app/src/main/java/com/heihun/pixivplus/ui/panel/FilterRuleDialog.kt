@@ -5,6 +5,8 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.LinearLayout
+import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.WorkText as W
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.ui.UiKit
 
@@ -28,7 +30,7 @@ object FilterRuleDialog {
                 UiKit.dialogHeader(
                     activity,
                     title,
-                    "每行一条，也可用逗号 / 分号分隔"
+                    W.FILTER_INPUT_HINT()
                 ) { UiKit.dismissAnimated(dialog, root) }
             )
             root.addView(UiKit.divider(activity))
@@ -80,10 +82,10 @@ object FilterRuleDialog {
                     UiKit.dp(activity, 12)
                 )
             }
-            val cancel = UiKit.textButton(activity, "取消").apply {
+            val cancel = UiKit.textButton(activity, C.CANCEL()).apply {
                 setOnClickListener { UiKit.dismissAnimated(dialog, root) }
             }
-            val save = UiKit.filledButton(activity, "保存").apply {
+            val save = UiKit.filledButton(activity, C.SAVE()).apply {
                 setOnClickListener {
                     val value = field.text.toString().trim()
                     UiKit.dismissAnimated(dialog, root) { onSave(value) }

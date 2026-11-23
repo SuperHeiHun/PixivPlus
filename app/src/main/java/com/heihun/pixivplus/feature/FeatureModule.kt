@@ -14,6 +14,8 @@ interface FeatureModule {
 
     fun onConfigChanged(host: Host)
 
+    fun onLanguageChanged(host: Host) { }
+
     fun onRuntimeReady(host: Host) {
     }
 }

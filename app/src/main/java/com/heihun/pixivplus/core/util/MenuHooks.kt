@@ -24,6 +24,18 @@ object MenuHooks {
     private val NO_ACCESSOR = Any()
     private val accessorCache = ConcurrentHashMap<Class<*>, Any>()
 
+    /** 更新模块项的文案但保留 itemId、排序和已有点击处理；对宿主条目无影响。 */
+    fun ensureItem(menu: Menu, id: Int, order: Int, title: String): Boolean {
+        val existing = menu.findItem(id)
+        if (existing == null) {
+            menu.add(Menu.NONE, id, order, title)
+            return true
+        }
+        if (existing.title?.toString() == title) return false
+        existing.title = title
+        return true
+    }
+
     fun findToolbars(root: View): List<View> {
         val result = ArrayList<View>()
         collect(root, result)

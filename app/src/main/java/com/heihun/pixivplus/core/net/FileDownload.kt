@@ -1,5 +1,6 @@
 package com.heihun.pixivplus.core.net
 
+import com.heihun.pixivplus.core.i18n.NetworkText as N
 import com.heihun.pixivplus.core.task.TaskExecution
 import org.json.JSONObject
 import java.io.File
@@ -31,14 +32,14 @@ internal object FileDownload {
         }
     }
     fun read(input: InputStream, file: File, url: String, maxBytes: Long, progress: (Long, Long) -> Unit): Response {
-        val status = line(input) ?: throw IOException("下载响应为空")
-        val code = status.split(' ').getOrNull(1)?.toIntOrNull() ?: throw IOException("下载状态行无效")
+        val status = line(input) ?: throw IOException(N.EMPTY_RESPONSE())
+        val code = status.split(' ').getOrNull(1)?.toIntOrNull() ?: throw IOException(N.BAD_STATUS_LINE())
         val headers = LinkedHashMap<String, String>()
         var headerBytes = 0
         while (true) {
-            val text = line(input) ?: throw IOException("下载响应头不完整")
+            val text = line(input) ?: throw IOException(N.BAD_HEADERS())
             headerBytes += text.length
-            if (headerBytes > 65536) throw IOException("下载响应头过大")
+            if (headerBytes > 65536) throw IOException(N.HEADER_LIMIT())
             if (text.isEmpty()) break
             if (':' in text) headers[text.substringBefore(':').trim().lowercase()] = text.substringAfter(':').trim()
         }
@@ -50,31 +51,31 @@ internal object FileDownload {
             if (total != null && total > 0 && total == previous && saved?.optLong("total") == total) {
                 saved.put("complete", true); stateFile(file).writeText(saved.toString()); return Response(code, complete = true)
             }
-            throw IOException("下载断点已失效，请选择重新开始下载")
+            throw IOException(N.CHECKPOINT_EXPIRED())
         }
-        if (code != 200 && code != 206) throw IOException("下载失败：HTTP $code")
-        if (headers["content-encoding"]?.let { it != "identity" } == true) throw IOException("下载响应压缩格式不支持断点续传")
+        if (code != 200 && code != 206) throw IOException(N.DOWNLOAD_HTTP(code))
+        if (headers["content-encoding"]?.let { it != "identity" } == true) throw IOException(N.UNSUPPORTED_ENCODING())
         val length = headers["content-length"]?.toLongOrNull()
         var total = length ?: -1L
         var expectedBody = length
         val append = code == 206
         if (append) {
             val range = Regex("bytes (\\d+)-(\\d+)/(\\d+)").matchEntire(headers["content-range"].orEmpty())
-                ?: throw IOException("服务器缺少有效 Content-Range")
+                ?: throw IOException(N.MISSING_RANGE())
             val start = range.groupValues[1].toLong()
             val end = range.groupValues[2].toLong()
             total = range.groupValues[3].toLong()
-            if (start != previous || end < start || end >= total) throw IOException("服务器返回的断点位置不一致")
+            if (start != previous || end < start || end >= total) throw IOException(N.RANGE_MISMATCH())
             expectedBody = end - start + 1
-            if (length != null && length != expectedBody) throw IOException("断点响应长度不一致")
+            if (length != null && length != expectedBody) throw IOException(N.RANGE_LENGTH_MISMATCH())
             val old = state(file)
-            if (old?.optLong("total", -1)?.let { it > 0 && it != total } == true) throw IOException("下载文件已变化，请重新开始")
+            if (old?.optLong("total", -1)?.let { it > 0 && it != total } == true) throw IOException(N.FILE_CHANGED())
             val oldEtag = old?.optString("etag").orEmpty()
-            if (oldEtag.isNotBlank() && headers["etag"] != null && oldEtag != headers["etag"]) throw IOException("下载文件已变化，请重新开始")
+            if (oldEtag.isNotBlank() && headers["etag"] != null && oldEtag != headers["etag"]) throw IOException(N.FILE_CHANGED())
             val modified = old?.optString("modified").orEmpty()
-            if (modified.isNotBlank() && headers["last-modified"] != null && modified != headers["last-modified"]) throw IOException("下载文件已变化，请重新开始")
+            if (modified.isNotBlank() && headers["last-modified"] != null && modified != headers["last-modified"]) throw IOException(N.FILE_CHANGED())
         }
-        if (total > maxBytes || expectedBody?.let { it < 0 || it > maxBytes } == true) throw IOException("下载文件超出大小限制")
+        if (total > maxBytes || expectedBody?.let { it < 0 || it > maxBytes } == true) throw IOException(N.FILE_LIMIT())
         val base = if (append) previous else 0L // 服务器忽略 Range 返回 200 时必须从头写，不能追加。
         val metadata = JSONObject().put("url", url).put("total", total).put("complete", false)
             .put("etag", headers["etag"] ?: if (append) state(file)?.optString("etag").orEmpty() else "")
@@ -91,10 +92,10 @@ internal object FileDownload {
                     val size = if (remaining == null) buffer.size else minOf(buffer.size.toLong(), remaining).toInt()
                     val read = input.read(buffer, 0, size)
                     if (read < 0) {
-                        if (remaining != null && remaining > 0) throw IOException("连接中断，已保留下载断点")
+                        if (remaining != null && remaining > 0) throw IOException(N.INCOMPLETE_DOWNLOAD())
                         break
                     }
-                    if (base + received + read > maxBytes) throw IOException("下载文件超出大小限制")
+                    if (base + received + read > maxBytes) throw IOException(N.FILE_LIMIT())
                     output.write(buffer, 0, read)
                     received += read
                     if (remaining != null) remaining -= read
@@ -104,19 +105,19 @@ internal object FileDownload {
             }
             if (headers["transfer-encoding"]?.contains("chunked", true) == true) {
                 while (true) {
-                    val size = line(input)?.substringBefore(';')?.trim()?.toLongOrNull(16) ?: throw IOException("下载分块长度无效")
-                    if (size < 0) throw IOException("下载分块长度无效")
+                    val size = line(input)?.substringBefore(';')?.trim()?.toLongOrNull(16) ?: throw IOException(N.BAD_CHUNK_LENGTH())
+                    if (size < 0) throw IOException(N.BAD_CHUNK_LENGTH())
                     if (size == 0L) { while (!line(input).isNullOrEmpty()) { }; break }
                     transfer(size)
-                    if (line(input) != "") throw IOException("下载分块结束符无效")
+                    if (line(input) != "") throw IOException(N.BAD_CHUNK_END())
                 }
             } else transfer(expectedBody)
-            if (expectedBody != null && received != expectedBody) throw IOException("下载响应不完整，已保留断点")
+            if (expectedBody != null && received != expectedBody) throw IOException(N.INCOMPLETE_DOWNLOAD())
             output.flush()
         }
         TaskExecution.check()
         if (total < 0) total = file.length()
-        if (file.length() <= 0 || file.length() > total) throw IOException("下载文件长度无效")
+        if (file.length() <= 0 || file.length() > total) throw IOException(N.BAD_FILE_LENGTH())
         val complete = file.length() == total
         metadata.put("total", total).put("complete", complete)
         stateFile(file).writeText(metadata.toString())
@@ -130,7 +131,7 @@ internal object FileDownload {
             if (byte < 0) return if (out.size() == 0) null else out.toString("ISO-8859-1")
             if (byte == 10) return out.toString("ISO-8859-1")
             if (byte != 13) out.write(byte)
-            if (out.size() > 8192) throw IOException("下载响应行过长")
+            if (out.size() > 8192) throw IOException(N.LINE_LIMIT())
         }
     }
 }

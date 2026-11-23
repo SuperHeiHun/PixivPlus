@@ -5,6 +5,7 @@ local.properties
 .idea/
 build/
 build-out/
+build-i18n-verify/
 captures/
 .externalNativeBuild/
 .cxx/

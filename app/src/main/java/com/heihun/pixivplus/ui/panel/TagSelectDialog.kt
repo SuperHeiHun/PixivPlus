@@ -13,6 +13,8 @@ import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.WorkText as W
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.ui.UiKit
 import com.heihun.pixivplus.ui.theme.Md3
@@ -43,13 +45,13 @@ object TagSelectDialog {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }
             texts.addView(TextView(activity).apply {
-                text = "选择要屏蔽的标签"
+                text = W.PICK_TAGS()
                 textSize = 22f
                 setTextColor(palette.onSurface)
                 typeface = Md3.medium
             })
             val summary = TextView(activity).apply {
-                text = "已选择 0 / ${tags.size}"
+                text = W.SELECTED(0, tags.size)
                 textSize = 13f
                 setTextColor(palette.onSurfaceVariant)
                 setPadding(0, UiKit.dp(activity, 2), 0, 0)
@@ -99,7 +101,7 @@ object TagSelectDialog {
                 row.setOnClickListener {
                     checked[index] = !checked[index]
                     checkbox.isChecked = checked[index]
-                    summary.text = "已选择 ${checked.count { it }} / ${tags.size}"
+                    summary.text = W.SELECTED(checked.count { it }, tags.size)
                 }
                 listContainer.addView(row)
             }
@@ -120,10 +122,10 @@ object TagSelectDialog {
                 gravity = Gravity.END or Gravity.CENTER_VERTICAL
                 setPadding(UiKit.dp(activity, 16), UiKit.dp(activity, 8), UiKit.dp(activity, 16), UiKit.dp(activity, 12))
             }
-            val cancel = UiKit.textButton(activity, "取消").apply {
+            val cancel = UiKit.textButton(activity, C.CANCEL()).apply {
                 setOnClickListener { UiKit.dismissAnimated(dialog, root) }
             }
-            val confirm = UiKit.filledButton(activity, "保存").apply {
+            val confirm = UiKit.filledButton(activity, C.SAVE()).apply {
                 setOnClickListener {
                     val selected = tags.filterIndexed { index, _ -> checked[index] }
                     UiKit.dismissAnimated(dialog, root) { onConfirm(selected) }

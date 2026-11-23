@@ -1,5 +1,6 @@
 package com.heihun.pixivplus.core.media
 
+import com.heihun.pixivplus.core.i18n.DownloadText as D
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 
@@ -7,7 +8,7 @@ import java.io.OutputStream
 class GifWriter(private val output: OutputStream, private val width: Int, private val height: Int) {
     private var finished = false
     init {
-        require(width in 1..65535 && height in 1..65535 && width.toLong() * height <= 4_000_000) { "GIF 分辨率过大（最多 400 万像素）" }
+        require(width in 1..65535 && height in 1..65535 && width.toLong() * height <= 4_000_000) { D.GIF_PIXEL_LIMIT() }
         output.write("GIF89a".toByteArray(Charsets.US_ASCII))
         word(width); word(height)
         output.write(byteArrayOf(0xf7.toByte(), 0, 0))

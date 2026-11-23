@@ -12,6 +12,7 @@ import com.heihun.pixivplus.core.config.ConfigManager
 import com.heihun.pixivplus.core.db.AuthorProfileDao
 import com.heihun.pixivplus.core.db.HistoryDao
 import com.heihun.pixivplus.core.db.LocalDatabase
+import com.heihun.pixivplus.core.i18n.I18n
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.FeatureRegistry
@@ -71,12 +72,18 @@ object InitCoordinator {
             val config = ConfigManager(application.getSharedPreferences(CONFIG_PREFS, Context.MODE_PRIVATE))
             Runtime.config = config
             ConfigStoreRegistry.install(config)
+            I18n.bind(config)
 
             SettingsInjector.install()
             ActivityResultBridge.install()
             FeatureRegistry.installAll(Host, config)
 
             background.execute {
+                try {
+                    I18n.loadInstalled(application)
+                } catch (e: Exception) {
+                    ModuleLog.w(TAG, "Could not load installed language packs", e)
+                }
                 initDatabase()
                 resolveAnchors(application)
                 FeatureRegistry.notifyRuntimeReady(Host)

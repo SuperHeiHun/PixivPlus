@@ -6,6 +6,7 @@ import android.widget.Toast
 import com.heihun.pixivplus.core.Host
 import com.heihun.pixivplus.core.config.ConfigKeys
 import com.heihun.pixivplus.core.i18n.DrawerText as D
+import com.heihun.pixivplus.core.i18n.I18n
 import com.heihun.pixivplus.core.i18n.SettingsText as S
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.util.ReflectUtil
@@ -74,7 +75,7 @@ class DrawerSlimFeature : ConfigurableFeature(
     override fun hook(host: Host) {
         if (installed) return
         installed = true
-        ConfigStoreRegistry.store.addListener(ConfigKeys.UI_LANGUAGE) { applyToAll() }
+        I18n.addListener(::applyToAll)
         val clazz = ReflectUtil.loadClass(host.classLoader, "com.google.android.material.navigation.NavigationView")
         if (clazz == null) {
             ModuleLog.w(displayName, "NavigationView class not found, feature skipped")

@@ -14,6 +14,8 @@ import android.widget.GridView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.heihun.pixivplus.core.i18n.CommonText as C
+import com.heihun.pixivplus.core.i18n.WorkText as W
 import com.heihun.pixivplus.core.media.MediaModels
 import com.heihun.pixivplus.core.media.MediaPreviewLoader
 import com.heihun.pixivplus.core.media.OriginalImage
@@ -41,31 +43,31 @@ object ImageSelectionDialog {
         MediaPreviewLoader.register(previews)
         val workers = ThreadPoolExecutor(3, 3, 0, TimeUnit.MILLISECONDS, ArrayBlockingQueue<Runnable>(24),
             { task -> Thread(task, "plp-image-preview").apply { isDaemon = true } }, ThreadPoolExecutor.AbortPolicy())
-        root.addView(UiKit.dialogHeader(activity, "自定义保存图片", null) { UiKit.dismissAnimated(dialog, root) })
+        root.addView(UiKit.dialogHeader(activity, W.PICK_IMAGES(), null) { UiKit.dismissAnimated(dialog, root) })
         root.addView(UiKit.divider(activity))
         val content = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(UiKit.dp(activity, 16), UiKit.dp(activity, 8), UiKit.dp(activity, 16), 0)
         }
         val summary = TextView(activity).apply {
-            text = "已选择 0 / ${images.size} 张 · 点选图片或输入页码"
+            text = W.PICK_IMAGES_TIP(0, images.size)
             textSize = 13f
             setTextColor(palette.onSurfaceVariant)
         }
         content.addView(summary)
         var adapter: BaseAdapter? = null
-        val field = UiKit.inputField(activity, "", "页码，例如 1,3,5-8", onChanged = { value ->
+        val field = UiKit.inputField(activity, "", W.PAGE_HINT(), onChanged = { value ->
             try {
                 val pages = if (value.isBlank()) emptyList() else MediaModels.selectPages(value, images.size)
                 selected.clear(); selected.addAll(pages)
-                summary.text = "已选择 ${selected.size} / ${images.size} 张 · 页码从 1 开始"
+                summary.text = W.PICK_FROM_ONE(selected.size, images.size)
                 adapter?.notifyDataSetChanged()
-            } catch (_: IllegalArgumentException) { summary.text = "页码尚未完成，例：1,3,5-8" }
+            } catch (_: IllegalArgumentException) { summary.text = W.PAGE_INCOMPLETE() }
         })
         content.addView(field)
         val tools = LinearLayout(activity)
-        tools.addView(UiKit.textButton(activity, "全选").apply { setOnClickListener { field.setText("1-${images.size}") } })
-        tools.addView(UiKit.textButton(activity, "清空").apply { setOnClickListener { field.setText("") } })
+        tools.addView(UiKit.textButton(activity, W.SELECT_ALL()).apply { setOnClickListener { field.setText("1-${images.size}") } })
+        tools.addView(UiKit.textButton(activity, C.CLEAR()).apply { setOnClickListener { field.setText("") } })
         content.addView(tools)
         val grid = GridView(activity).apply {
             numColumns = 3
@@ -103,7 +105,7 @@ object ImageSelectionDialog {
                 }
                 val checked = item.page in selected
                 cell.check.isChecked = checked
-                cell.label.text = "第 ${item.page} 页"
+                cell.label.text = W.PAGE_NUMBER(item.page)
                 cell.root.background = GradientDrawable().apply {
                     cornerRadius = UiKit.dp(activity, 8).toFloat()
                     setColor(palette.surfaceContainer)
@@ -112,7 +114,7 @@ object ImageSelectionDialog {
                 val bitmap = previews.get(item.page)
                 cell.image.setImageBitmap(bitmap)
                 cell.status.visibility = if (bitmap == null) View.VISIBLE else View.GONE
-                cell.status.text = if (item.page in failed) "预览加载失败\n仍可选择此页" else "加载预览…"
+                cell.status.text = if (item.page in failed) W.PREVIEW_FAILED() else W.PREVIEW_LOADING()
                 cell.root.setOnClickListener {
                     if (!selected.add(item.page)) selected.remove(item.page)
                     field.setText(selected.joinToString(","))
@@ -144,10 +146,10 @@ object ImageSelectionDialog {
             gravity = Gravity.END
             setPadding(UiKit.dp(activity, 16), UiKit.dp(activity, 8), UiKit.dp(activity, 16), UiKit.dp(activity, 12))
         }
-        footer.addView(UiKit.textButton(activity, "取消").apply {
+        footer.addView(UiKit.textButton(activity, C.CANCEL()).apply {
             setOnClickListener { UiKit.dismissAnimated(dialog, root) }
         }, LinearLayout.LayoutParams(-2, UiKit.dp(activity, 40)))
-        footer.addView(UiKit.filledButton(activity, "下一步").apply {
+        footer.addView(UiKit.filledButton(activity, C.NEXT()).apply {
             setOnClickListener {
                 try {
                     val pages = MediaModels.selectPages(field.text.toString(), images.size)
