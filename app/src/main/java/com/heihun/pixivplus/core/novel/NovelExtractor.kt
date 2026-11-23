@@ -14,7 +14,7 @@ object NovelExtractor {
 
     /**
      * 从阅读页 DOM 提取小说正文 token：
-     * `x` 文本节点、`h` 章节标题文本、`i` 图片、`n` 换行（<br> 与块元素边界）、
+     * `x` 文本节点、`h` 章节标题文本、`i` 图片、`n` 显式换行、`b` 块元素布局边界、
      * `p` 分页（`<div id="N" class="page">` 页容器）。
      *
      * 阅读页结构（实测 /webview/v2/novel 服务端渲染）：
@@ -153,7 +153,8 @@ object NovelExtractor {
 
     /**
      * DOM token → 排版块：文本合并为行，空行保留（排版留白），标题转章节，
-     * 分页标记保留（连续分页合并），图片保持原位置顺序。
+     * 分页标记保留（连续分页合并），图片保持原位置顺序；布局边界仅结束当前行，
+     * 不制造空行，不去除正文行的缩进/尾部空格或作者的首尾空行。
      */
     fun blocksFromTokens(tokens: JSONArray): List<NovelBlock> {
         val blocks = ArrayList<NovelBlock>()
@@ -206,7 +207,7 @@ object NovelExtractor {
                 "p" -> {
                     if (line.isNotEmpty() || lineIsHeading) flush()
                     if (blocks.lastOrNull() != NovelBlock.PageBreak) blocks.add(NovelBlock.PageBreak)
-                    suppressBlank = true
+                    suppressBlank = false
                 }
                 "i" -> {
                     if (line.isNotEmpty() || lineIsHeading) flush()
@@ -226,6 +227,7 @@ object NovelExtractor {
         while (blocks.lastOrNull() is NovelBlock.PageBreak) {
             blocks.removeAt(blocks.size - 1)
         }
+        if (blocks.none { it !is NovelBlock.PageBreak && (it !is NovelBlock.Text || it.line.isNotBlank()) }) return emptyList()
         return blocks
     }
 }

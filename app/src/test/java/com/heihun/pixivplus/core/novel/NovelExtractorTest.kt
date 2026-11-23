@@ -124,4 +124,13 @@ class NovelExtractorTest {
         assertEquals(listOf(NovelBlock.Text("前文"), NovelBlock.Text(""), NovelBlock.Chapter("章"),
             NovelBlock.Text(""), NovelBlock.Picture("https://embed.example/i.jpg"), NovelBlock.Text(""), NovelBlock.Text("后文")), blocks)
     }
+
+    @Test fun `author blank at start of next page survives`() {
+        assertEquals(listOf(NovelBlock.Text("前页"), NovelBlock.PageBreak, NovelBlock.Text(""), NovelBlock.Text("后页")),
+            NovelExtractor.blocksFromTokens(tokens(x("前页"), n(), p(), n(), x("后页"), n())))
+    }
+
+    @Test fun `loading content made only of whitespace is not exported`() {
+        assertTrue(NovelExtractor.blocksFromTokens(tokens(b(), n(), x("　 "), n(), b())).isEmpty())
+    }
 }
