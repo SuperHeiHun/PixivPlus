@@ -91,6 +91,13 @@ object TaskPanel {
         val card = UiKit.card(activity)
         card.addView(UiKit.infoRow(activity, record.title, record.state.label))
         card.addView(UiKit.paragraph(activity, "${I18n.dateTime(record.createdAt)} · ${record.displayMessage()}"))
+        if (record.state == TaskState.SUCCEEDED && record.files.isNotEmpty()) {
+            card.addView(UiKit.textButton(activity, T.OPEN_FILE()).apply {
+                setOnClickListener { com.heihun.pixivplus.core.task.TaskFileOpener.show(activity, record.files) }
+            })
+        } else if (record.state == TaskState.SUCCEEDED && record.kind == com.heihun.pixivplus.core.task.TaskKind.DOWNLOAD) {
+            card.addView(UiKit.paragraph(activity, T.NO_RECORDED_FILES()))
+        }
         if (record.workId > 0) {
             val novel = record.workType == "NOVEL"
             fun openWork() {
