@@ -74,11 +74,18 @@ try {
     if ([string]::IsNullOrWhiteSpace($JavaHome) -or (Get-JavaMajor $JavaHome) -ne 17) {
         throw "需要 JDK17，请使用 -JavaHome 指定安装目录。"
     }
-    if ([string]::IsNullOrWhiteSpace($SdkRoot)) { $SdkRoot = $env:ANDROID_HOME }
-    if ([string]::IsNullOrWhiteSpace($SdkRoot)) { $SdkRoot = $env:ANDROID_SDK_ROOT }
-    if ([string]::IsNullOrWhiteSpace($SdkRoot) -and (Test-Path "local.properties")) {
-        $line = Get-Content "local.properties" | Where-Object { $_ -match '^sdk\.dir=' } | Select-Object -First 1
-        if ($line) { $SdkRoot = $line.Substring(8).Replace('\:', ':').Replace('\\', '\') }
+    if ([string]::IsNullOrWhiteSpace($SdkRoot)) {
+        $sdkCandidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)
+        if (Test-Path "local.properties") {
+            $line = Get-Content "local.properties" | Where-Object { $_ -match '^sdk\.dir=' } | Select-Object -First 1
+            if ($line) { $sdkCandidates += $line.Substring(8).Replace('\:', ':').Replace('\\', '\') }
+        }
+        foreach ($candidate in $sdkCandidates) {
+            if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate)) {
+                $SdkRoot = $candidate
+                break
+            }
+        }
     }
     if ([string]::IsNullOrWhiteSpace($SdkRoot) -or -not (Test-Path -LiteralPath $SdkRoot)) {
         throw "找不到 Android SDK，请使用 -SdkRoot 指定目录。"
