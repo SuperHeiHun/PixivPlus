@@ -14,6 +14,8 @@ Telegram频道：<https://t.me/HeiHun_Sub>
 | 系统要求 | Android 8.0（API 26）及以上 |
 | 框架要求 | LSPosed / Xposed，作用域需勾选「Pixiv」 |
 
+本版更新说明：[v1.0.8 更新日志](release-notes/v1.0.8.md)。
+
 > 模块通过 DexKit 在运行时解析宿主关键类与方法，对宿主的小版本更新有一定容忍度；升级宿主后如功能异常，请反馈对应版本号。
 
 ## 功能列表
