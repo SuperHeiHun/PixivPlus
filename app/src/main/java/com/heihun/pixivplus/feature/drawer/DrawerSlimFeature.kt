@@ -1,6 +1,7 @@
 package com.heihun.pixivplus.feature.drawer
 
 import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.widget.Toast
 import com.heihun.pixivplus.core.Host
@@ -17,6 +18,7 @@ import com.heihun.pixivplus.feature.ConfigurableFeature
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import java.lang.ref.WeakReference
+import java.lang.reflect.Method
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
@@ -69,7 +71,9 @@ class DrawerSlimFeature : ConfigurableFeature(
 
     private val navViews = Collections.newSetFromMap(ConcurrentHashMap<Int, Boolean>())
     private val navRefs = ConcurrentHashMap<Int, WeakReference<View>>()
-    private val navMenus = ConcurrentHashMap<Int, WeakReference<Menu>>()
+    private data class TrackedItem(val item: WeakReference<MenuItem>, val view: WeakReference<View>, val entryName: String)
+    private val trackedItems = ConcurrentHashMap<Int, TrackedItem>()
+    private val visibilityHooks = Collections.newSetFromMap(ConcurrentHashMap<Method, Boolean>())
     private var installed = false
 
     override fun hook(host: Host) {
@@ -93,25 +97,19 @@ class DrawerSlimFeature : ConfigurableFeature(
                     }
                 })
             }
-            // App 会动态 add 下半部分菜单项（关注 / 粉丝 / 设置等），监听菜单结构变化重新应用。
-            val menuClass = ReflectUtil.loadClass(host.classLoader, "androidx.appcompat.view.menu.MenuBuilder")
-            val onChange = menuClass?.let {
-                ReflectUtil.findMethods(it, "onItemsChanged").firstOrNull { m -> m.parameterCount == 1 }
-            }
-            if (onChange != null) {
-                XposedBridge.hookMethod(onChange, object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        val menu = param.thisObject ?: return
-                        if (!isTrackedMenu(menu)) return
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                            applyToTrackedMenu(menu)
-                        }, 120L)
-                    }
-                })
-                ModuleLog.i(displayName, "navigation view hooks installed (with menu change listener)")
-                return
-            }
-            ModuleLog.i(displayName, "navigation view hooks installed")
+            // 宿主 MenuBuilder/onItemsChanged 已混淆，不能依赖其原始类名或方法名。
+            // 绘制前补查新建/替换的菜单、setGroupVisible 等绕过公开 setVisible 的更新。
+            // 每次只在确有差异时写可见性，不排队轮询或制造菜单更新循环。
+            val draw = ReflectUtil.findMethod(clazz, "dispatchDraw", android.graphics.Canvas::class.java)
+            if (draw != null) XposedBridge.hookMethod(draw, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val view = param.thisObject as? View ?: return
+                    if (!isMainNavigationView(view)) return
+                    rememberView(view)
+                    applyToView(view)
+                }
+            })
+            ModuleLog.i(displayName, "navigation view hooks installed (scoped visibility and draw guard)")
         } catch (t: Throwable) {
             ModuleLog.w(displayName, "hook NavigationView failed", t)
         }
@@ -134,27 +132,49 @@ class DrawerSlimFeature : ConfigurableFeature(
 
     private fun rememberView(view: View) {
         val key = System.identityHashCode(view)
-        navRefs[key] = WeakReference(view)
+        if (navRefs[key]?.get() !== view) navRefs[key] = WeakReference(view)
         navViews.add(key)
         if (navRefs.size > 8) {
-            navRefs.entries.removeIf { it.value.get() == null }
-        }
-    }
-
-    private fun isTrackedMenu(menu: Any): Boolean {
-        for (key in navMenus.keys) {
-            if (navMenus[key]?.get() === menu) return true
-        }
-        return false
-    }
-
-    private fun applyToTrackedMenu(menu: Any) {
-        for (key in navViews.toList()) {
-            val view = navRefs[key]?.get() ?: continue
-            val tracked = navMenus[key]?.get() ?: continue
-            if (tracked === menu) {
-                applyToView(view)
+            navRefs.entries.removeIf {
+                if (it.value.get() == null) { navViews.remove(it.key); true } else false
             }
+        }
+        if (trackedItems.size > 256) {
+            trackedItems.entries.removeIf { it.value.item.get() == null || it.value.view.get() == null }
+        }
+    }
+
+    private fun trackItem(view: View, item: MenuItem, entryName: String) {
+        val key = System.identityHashCode(item)
+        val existing = trackedItems[key]
+        if (existing != null && existing.item.get() === item && existing.view.get() === view && existing.entryName == entryName) return
+        trackedItems[key] = TrackedItem(WeakReference(item), WeakReference(view), entryName)
+        val method = ReflectUtil.findMethod(item.javaClass, "setVisible", Boolean::class.javaPrimitiveType!!) ?: return
+        if (!visibilityHooks.add(method)) return
+        try {
+            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    if (param.args[0] != true) return
+                    val tracked = trackedItems[System.identityHashCode(param.thisObject)] ?: return
+                    if (tracked.item.get() !== param.thisObject || tracked.view.get() == null) return
+                    if (DrawerVisibilityPolicy.mustHide(tracked.entryName, slimEnabled(), hiddenItems(),
+                            ConfigStoreRegistry.store.get(ConfigKeys.TASK_LIST_ENABLED))) {
+                        // 改实参，不递归调用 setVisible；正常保留宿主返回值与菜单通知。
+                        param.args[0] = false
+                    }
+                }
+            })
+        } catch (t: Throwable) {
+            visibilityHooks.remove(method)
+            ModuleLog.w(displayName, "hook menu visibility failed", t)
+        }
+    }
+
+    private fun entryName(view: View, item: MenuItem): String? {
+        return if (item.itemId == TASK_ITEM_ID) TASK_ENTRY_NAME else try {
+            view.resources.getResourceEntryName(item.itemId)
+        } catch (_: Throwable) {
+            null
         }
     }
 
@@ -179,7 +199,6 @@ class DrawerSlimFeature : ConfigurableFeature(
 
     private fun applyToView(view: View) {
         val menu = ReflectUtil.invoke(view, ReflectUtil.findMethod(view.javaClass, "getMenu")) as? Menu ?: return
-        navMenus[System.identityHashCode(view)] = WeakReference(menu)
         val slim = slimEnabled()
         val hidden = hiddenItems()
 
@@ -202,21 +221,19 @@ class DrawerSlimFeature : ConfigurableFeature(
         for (index in 0 until menu.size()) {
             val item = menu.getItem(index) ?: continue
             if (item.itemId == TOGGLE_ITEM_ID) continue
-            val entryName = if (item.itemId == TASK_ITEM_ID) TASK_ENTRY_NAME else try {
-                view.resources.getResourceEntryName(item.itemId)
-            } catch (_: Throwable) {
-                null
-            } ?: continue
+            // 不以父项是否有可解析的资源名决定是否遍历子菜单。
+            val subMenu = item.subMenu
+            if (subMenu != null) applyToMenu(view, subMenu, slim, hidden, onToggled)
+            val entryName = entryName(view, item) ?: continue
             // 只管理侧边栏自身的菜单项，App 默认不可见的其他项不得强改可见性。
             if (!entryName.startsWith("drawer_menu_")) continue
-            val targetVisible = !(slim && entryName in hidden) &&
-                (item.itemId != TASK_ITEM_ID || ConfigStoreRegistry.store.get(ConfigKeys.TASK_LIST_ENABLED))
+            trackItem(view, item, entryName)
+            val targetVisible = !DrawerVisibilityPolicy.mustHide(entryName, slim, hidden,
+                ConfigStoreRegistry.store.get(ConfigKeys.TASK_LIST_ENABLED))
             if (item.isVisible != targetVisible) {
                 item.isVisible = targetVisible
                 changed++
             }
-            val subMenu = item.subMenu
-            if (subMenu != null) applyToMenu(view, subMenu, slim, hidden, onToggled)
         }
         if (changed > 0) onToggled(changed)
     }
