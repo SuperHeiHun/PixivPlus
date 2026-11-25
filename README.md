@@ -212,6 +212,8 @@ Android / iOS 版 Pixiv 为满足应用商店合规要求，会隐藏包含 URL 
 
 ## 构建
 
+诊断页的 `src-…` 构建标识由源码、资源和主要构建配置的内容计算；相同输入保持不变，避免每次构建时间变化触发重复编译。该标识不代表构建时间或 APK 文件校验值，也不包含签名凭据；Debug/Release 可共享同一源码标识。
+
 ```bash
 ./gradlew assembleDebug      # 调试包 -> app/build-out/outputs/apk/debug/
 ./gradlew assembleRelease    # 发布包 -> app/build-out/outputs/apk/release/

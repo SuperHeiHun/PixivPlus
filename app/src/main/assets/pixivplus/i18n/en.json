@@ -307,7 +307,7 @@
     "settings.backup_location": "Backup location",
     "settings.backup_location_hint": "Choose a local folder or configure a WebDAV directory",
     "settings.backup_remote_missing": "WebDAV: not configured",
-    "settings.build_time": "Build time",
+    "settings.build_time": "Build identifier",
     "settings.cache": "Module cache",
     "settings.cache_hint": "Clear partial downloads, previews and translations",
     "settings.caption_fix": "Restore artwork captions",

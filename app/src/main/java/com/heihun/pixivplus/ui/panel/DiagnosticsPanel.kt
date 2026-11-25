@@ -86,7 +86,7 @@ object DiagnosticsPanel {
         return if (Host.isMainProcess) P.MAIN_PROCESS(process) else P.CHILD_PROCESS(process)
     }
 
-    /** BUILD_FINGERPRINT（构建时间戳）格式化为可读时间，用于确认设备上实际安装的构建。 */
+    /** 新构建显示稳定源码指纹；兼容旧 APK 的数字时间戳，便于确认设备上的构建。 */
     fun moduleBuildLabel(): String {
         return try {
             val raw = com.heihun.pixivplus.BuildConfig.BUILD_FINGERPRINT

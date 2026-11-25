@@ -307,7 +307,7 @@
     "settings.backup_location": "备份位置",
     "settings.backup_location_hint": "本地文件夹由用户选择；WebDAV 目录可自定义",
     "settings.backup_remote_missing": "WebDAV 未设置",
-    "settings.build_time": "构建时间",
+    "settings.build_time": "构建标识",
     "settings.cache": "模块缓存",
     "settings.cache_hint": "清理断点、预览和翻译缓存",
     "settings.caption_fix": "插画简介修复",
