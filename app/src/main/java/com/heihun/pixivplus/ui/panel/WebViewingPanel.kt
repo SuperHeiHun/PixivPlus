@@ -92,14 +92,6 @@ internal object WebViewingPanel {
             card.addView(UiKit.filledButtonRow(activity, W.REFRESH()) { perform() }.also {
                 if (busy) disable(it)
             })
-            card.addView(UiKit.filledButtonRow(activity, W.RELOGIN()) {
-                if (!busy && attached) {
-                    WebLoginDialog.show(activity) {
-                        state = null
-                        perform()
-                    }
-                }
-            }.also { if (busy) disable(it) })
             card.addView(UiKit.filledButtonRow(activity, W.OPEN_WEB()) {
                 try {
                     activity.startActivity(Intent(Intent.ACTION_VIEW,

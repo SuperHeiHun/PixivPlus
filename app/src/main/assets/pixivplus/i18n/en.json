@@ -584,10 +584,6 @@
     "web_viewing.failed": "Could not read or save web settings. Check the network, module proxy and web login, then refresh. No successful save has been confirmed.",
     "web_viewing.session": "The web session or account settings changed. Refresh before trying again.",
     "web_viewing.verify": "The save could not be verified. The account may already have changed; refresh or check the official website before trying again.",
-    "web_viewing.account": "Web account UID",
-    "web_viewing.relogin": "Web login / sign in again",
-    "web_viewing.login_help": "Sign in on the official Pixiv website below. If already signed in, use the website's account menu to sign out or switch accounts. Cookies are not automatically cleared. Tap Done when ready to refresh the viewing settings. This window supports Pixiv email login, not external social login. WebView uses the host's network connection, not the module's standalone HTTP proxy. Changing this shared web session may affect Pixiv's other web pages; it does not directly sign out the app.",
-    "web_viewing.login_done": "Done — return and refresh",
-    "web_viewing.login_blocked": "This login window only allows official Pixiv HTTPS pages with valid certificates. External login pages are not supported."
+    "web_viewing.account": "Web account UID"
   }
 }

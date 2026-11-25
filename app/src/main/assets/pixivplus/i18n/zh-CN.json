@@ -584,10 +584,6 @@
     "web_viewing.failed": "无法读取或保存网页设置。请检查网络、模块代理及网页登录后刷新；尚未确认保存成功。",
     "web_viewing.session": "网页会话或账号设置已变化，请先刷新再操作。",
     "web_viewing.verify": "无法确认保存结果，账号设置可能已经改变；请刷新或前往官方网页确认后再操作。",
-    "web_viewing.account": "网页账号 UID",
-    "web_viewing.relogin": "网页登录 / 重新登录",
-    "web_viewing.login_help": "请在下方 Pixiv 官方网页完成登录。已登录时可通过网页账号菜单退出或切换账号，不会自动清空 Cookie。完成后点击「完成并返回」刷新阅览设置。此窗口支持 Pixiv 邮箱登录，不支持外部社交账号登录。WebView 使用宿主网络，不使用模块独立 HTTP 代理。此共享网页会话的变化可能影响 Pixiv 其他内置网页，但不会直接退出 App 登录。",
-    "web_viewing.login_done": "完成并返回，刷新设置",
-    "web_viewing.login_blocked": "登录窗口仅允许证书有效的 Pixiv 官方 HTTPS 页面，不支持外部登录页面。"
+    "web_viewing.account": "网页账号 UID"
   }
 }
