@@ -25,8 +25,8 @@ $originalSdk = $env:ANDROID_HOME
 $mutex = $null
 $locked = $false
 
-function Get-JavaMajor([string]$Home) {
-    $exe = Join-Path $Home "bin/java.exe"
+function Get-JavaMajor([string]$JavaRoot) {
+    $exe = Join-Path $JavaRoot "bin/java.exe"
     if (-not (Test-Path -LiteralPath $exe)) { return 0 }
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
