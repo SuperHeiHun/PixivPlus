@@ -77,6 +77,9 @@ object ConfigKeys {
     /** 侧边栏精简模式：开启后隐藏 drawer_slim_items 列出的菜单项。 */
     val DRAWER_SLIM_ENABLED = ConfigKey("drawer_slim_enabled", false, { it.toString() }, { it.toBoolean() })
 
+    val BOTTOM_SLIM_ENABLED = ConfigKey("bottom_slim_enabled", false, { it.toString() }, { it.toBoolean() })
+    val BOTTOM_SLIM_ITEMS = ConfigKey("bottom_slim_items", "", { it }, { it })
+
     /** 精简模式下隐藏的侧边栏菜单项资源名（drawer_menu_*），逗号分隔。 */
     val DRAWER_SLIM_ITEMS = ConfigKey(
         "drawer_slim_items",

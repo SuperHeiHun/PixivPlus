@@ -30,6 +30,7 @@ import com.heihun.pixivplus.core.i18n.LanguageText as L
 import com.heihun.pixivplus.core.i18n.SettingsText as S
 import com.heihun.pixivplus.core.i18n.Text
 import com.heihun.pixivplus.core.i18n.WebViewingText as W
+import com.heihun.pixivplus.core.i18n.SlimText as Slim
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.net.FilterRules
 import com.heihun.pixivplus.core.net.ProxyMode
@@ -55,6 +56,7 @@ object SettingsPanelBuilder {
         TASKS(S.TASKS, S.TASKS_HINT),
         CACHE(S.CACHE, S.CACHE_HINT),
         DRAWER_SLIM(S.DRAWER, S.DRAWER_HINT),
+        BOTTOM_SLIM(Slim.BOTTOM, Slim.BOTTOM_HINT),
         PROXY(S.PROXY, S.PROXY_HINT),
         BACKUP(S.BACKUP, S.BACKUP_HINT),
         HISTORY(S.HISTORY, S.HISTORY_HINT),
@@ -196,6 +198,7 @@ object SettingsPanelBuilder {
             Screen.TASKS -> TaskPanel.build(activity, body) { open(Screen.CACHE) }
             Screen.CACHE -> CachePanel.build(activity, body)
             Screen.DRAWER_SLIM -> buildDrawerSlimPage(activity, body)
+            Screen.BOTTOM_SLIM -> BottomSlimPanel.build(activity, body)
             Screen.PROXY -> {
                 val card = UiKit.card(activity)
                 body.addView(card)
@@ -239,6 +242,7 @@ object SettingsPanelBuilder {
         addMenuRow(features, activity, S.ILLUST_SAVE(), if (configValue(ConfigKeys.ILLUST_SAVE_ENABLED)) S.ORIGINAL_FORMATS() else C.DISABLED(), Screen.ILLUST_SAVE, open)
         addMenuRow(features, activity, S.TASKS(), S.TASKS_HINT(), Screen.TASKS, open)
         addMenuRow(features, activity, S.DRAWER(), drawerSlimSummary(), Screen.DRAWER_SLIM, open)
+        addMenuRow(features, activity, Slim.BOTTOM(), Slim.BOTTOM_HINT(), Screen.BOTTOM_SLIM, open)
         body.addView(features)
 
         body.addView(UiKit.sectionTitle(activity, S.NETWORK_SECTION()))

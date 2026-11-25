@@ -25,7 +25,7 @@ class I18nTest {
         val chinese = builtin("zh-CN").strings
         assertFalse(File("src/main/assets/pixivplus/i18n/ja.json").exists())
         val tables = listOf(BackupText, CommonText, DownloadText, DrawerText, LanguageText, NetworkText,
-            PanelText, SettingsText, TaskText, WorkText, WebViewingText)
+            PanelText, SettingsText, TaskText, WorkText, WebViewingText, SlimText)
         val keys = tables.flatMap { table -> table.javaClass.declaredFields.filter { it.type == Text::class.java }.map {
             it.isAccessible = true
             (it.get(table) as Text).key

@@ -1,6 +1,7 @@
 package com.heihun.pixivplus.core.i18n
 
 internal object DrawerText {
+    val MY_PAGE = Text("drawer.my_page")
     val ENTRY_SUMMARY = Text("drawer.entry_summary")
     val MUTE_ENTRY = Text("drawer.mute_entry")
     val MUTE_ENTRY_SUMMARY = Text("drawer.mute_entry_summary")

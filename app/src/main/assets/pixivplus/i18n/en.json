@@ -584,6 +584,14 @@
     "web_viewing.failed": "Could not read or save web settings. Check the network, module proxy and web login, then refresh. No successful save has been confirmed.",
     "web_viewing.session": "The web session or account settings changed. Refresh before trying again.",
     "web_viewing.verify": "The save could not be verified. The account may already have changed; refresh or check the official website before trying again.",
-    "web_viewing.account": "Web account UID"
+    "web_viewing.account": "Web account UID",
+    "drawer.my_page": "My page",
+    "slim.bottom": "Simplify bottom navigation",
+    "slim.bottom_hint": "Choose which main bottom navigation entries to hide.",
+    "slim.enable": "Enable simplification",
+    "slim.items": "Entries to hide",
+    "slim.hide": "Hide while simplification is enabled",
+    "slim.keep_one": "Keep at least one bottom navigation entry.",
+    "slim.bottom_help": "Disabled by default. Home, Search, Following new works, Notifications and My page can be hidden individually. At least one entry is kept, including after restoring incompatible settings. Hiding the selected tab switches to an available entry. This does not remove pages or change sidebar settings."
   }
 }

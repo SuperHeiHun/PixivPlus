@@ -27,6 +27,7 @@ object FeatureRegistry {
         features.add(com.heihun.pixivplus.feature.illustsave.IllustSaveFeature())
         features.add(com.heihun.pixivplus.feature.translate.TranslationFeature())
         features.add(com.heihun.pixivplus.feature.drawer.DrawerSlimFeature())
+        features.add(com.heihun.pixivplus.feature.slim.BottomSlimFeature())
 
         for (feature in features) {
             try {
@@ -62,6 +63,8 @@ object FeatureRegistry {
         watchedKeys.add(ConfigKeys.TRANSLATE_TARGET)
         watchedKeys.add(ConfigKeys.DRAWER_SLIM_ENABLED)
         watchedKeys.add(ConfigKeys.DRAWER_SLIM_ITEMS)
+        watchedKeys.add(ConfigKeys.BOTTOM_SLIM_ENABLED)
+        watchedKeys.add(ConfigKeys.BOTTOM_SLIM_ITEMS)
 
         for (key in watchedKeys) {
             config.addListener(key) { value ->
