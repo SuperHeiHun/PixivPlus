@@ -597,6 +597,12 @@
     "slim.my_page_hint": "精简主页底栏打开的个人首页，不影响用户详情页。",
     "slim.my_page_help": "默认关闭，初始不隐藏任何项。保留账号信息、查看个人资料和设置入口，可勾选隐藏功能行、会员按钮或投稿按钮。修改后请离开个人首页再进入；若宿主保留页面，可能需要重启 Pixiv。分组标题及间距可能仍保留。目前仅支持 Pixiv 6.192.1 的 Compose 映射，未知版本保留原页面。不改变侧边栏或作者用户详情页。",
     "slim.premium": "会员按钮",
-    "slim.upload": "投稿作品按钮"
+    "slim.upload": "投稿作品按钮",
+    "slim.title": "界面精简",
+    "slim.hint": "通过标签页配置侧边栏、底栏和个人首页，各项设置独立。",
+    "slim.summary": "已开启 %1$d / 3 项精简",
+    "slim.tab_drawer": "侧边栏",
+    "slim.tab_bottom": "底栏",
+    "slim.tab_my_page": "个人首页"
   }
 }

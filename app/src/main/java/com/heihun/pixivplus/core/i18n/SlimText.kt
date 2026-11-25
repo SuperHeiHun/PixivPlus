@@ -1,6 +1,12 @@
 package com.heihun.pixivplus.core.i18n
 
 internal object SlimText {
+    val TITLE = Text("slim.title")
+    val HINT = Text("slim.hint")
+    val SUMMARY = Text("slim.summary")
+    val TAB_DRAWER = Text("slim.tab_drawer")
+    val TAB_BOTTOM = Text("slim.tab_bottom")
+    val TAB_MY_PAGE = Text("slim.tab_my_page")
     val BOTTOM = Text("slim.bottom")
     val BOTTOM_HINT = Text("slim.bottom_hint")
     val ENABLE = Text("slim.enable")

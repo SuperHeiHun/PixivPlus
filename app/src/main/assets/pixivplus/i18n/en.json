@@ -597,6 +597,12 @@
     "slim.my_page_hint": "Hide entries on My page opened from the main bottom navigation, not user profile pages.",
     "slim.my_page_help": "Disabled by default, with no entries hidden initially. Account information, View profile and Settings remain available. Choose rows, the Premium button or Upload button to hide. After changing options, leave My page and enter it again; restarting Pixiv may be needed if the page is retained. Section headings and spacing may remain. Only the Pixiv 6.192.1 Compose mapping is currently supported; unknown versions keep the original page. Sidebar and user profile pages are unchanged.",
     "slim.premium": "Premium membership button",
-    "slim.upload": "Upload work button"
+    "slim.upload": "Upload work button",
+    "slim.title": "Interface simplification",
+    "slim.hint": "Configure Sidebar, Bottom bar and My page using tabs. Each keeps its own settings.",
+    "slim.summary": "%1$d of 3 simplification options enabled",
+    "slim.tab_drawer": "Sidebar",
+    "slim.tab_bottom": "Bottom bar",
+    "slim.tab_my_page": "My page"
   }
 }

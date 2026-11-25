@@ -55,9 +55,7 @@ object SettingsPanelBuilder {
         ILLUST_SAVE(S.ILLUST_SAVE, S.ILLUST_SAVE_HINT),
         TASKS(S.TASKS, S.TASKS_HINT),
         CACHE(S.CACHE, S.CACHE_HINT),
-        DRAWER_SLIM(S.DRAWER, S.DRAWER_HINT),
-        BOTTOM_SLIM(Slim.BOTTOM, Slim.BOTTOM_HINT),
-        MY_PAGE_SLIM(Slim.MY_PAGE, Slim.MY_PAGE_HINT),
+        SLIM(Slim.TITLE, Slim.HINT),
         PROXY(S.PROXY, S.PROXY_HINT),
         BACKUP(S.BACKUP, S.BACKUP_HINT),
         HISTORY(S.HISTORY, S.HISTORY_HINT),
@@ -92,6 +90,7 @@ object SettingsPanelBuilder {
             var current = Screen.MAIN
             // 记住各页滚动位置：从二级页返回主页时恢复，不再跳回顶部。
             val scrollPositions = HashMap<Screen, Int>()
+            val slimTabs = SlimTabState()
             var activeScroll: ScrollView? = null
             fun showScreen(screen: Screen, fromBack: Boolean = false) {
                 activeScroll?.let { view -> scrollPositions[current] = view.scrollY }
@@ -102,6 +101,7 @@ object SettingsPanelBuilder {
                     dialog,
                     container,
                     screen,
+                    slimTabs,
                     goingBack,
                     { showScreen(it) },
                     {
@@ -145,6 +145,7 @@ object SettingsPanelBuilder {
         dialog: Dialog,
         container: LinearLayout,
         screen: Screen,
+        slimTabs: SlimTabState,
         goingBack: Boolean,
         open: (Screen) -> Unit,
         back: () -> Unit,
@@ -159,6 +160,12 @@ object SettingsPanelBuilder {
         }
         container.addView(header)
         container.addView(UiKit.divider(activity))
+
+        if (screen == Screen.SLIM) {
+            SlimPanel.build(activity, container, slimTabs, onScrollCreated)
+            UiKit.fadeIn(header)
+            return
+        }
 
         val scroll = ScrollView(activity).apply {
             isFillViewport = true
@@ -198,9 +205,7 @@ object SettingsPanelBuilder {
             Screen.ILLUST_SAVE -> buildIllustSavePage(activity, body)
             Screen.TASKS -> TaskPanel.build(activity, body) { open(Screen.CACHE) }
             Screen.CACHE -> CachePanel.build(activity, body)
-            Screen.DRAWER_SLIM -> buildDrawerSlimPage(activity, body)
-            Screen.BOTTOM_SLIM -> BottomSlimPanel.build(activity, body)
-            Screen.MY_PAGE_SLIM -> MyPageSlimPanel.build(activity, body)
+            Screen.SLIM -> Unit // 固定标签页已在创建普通滚动容器前处理。
             Screen.PROXY -> {
                 val card = UiKit.card(activity)
                 body.addView(card)
@@ -243,9 +248,7 @@ object SettingsPanelBuilder {
         addMenuRow(features, activity, S.NOVEL_SAVE(), novelSaveSummary(), Screen.NOVEL_SAVE, open)
         addMenuRow(features, activity, S.ILLUST_SAVE(), if (configValue(ConfigKeys.ILLUST_SAVE_ENABLED)) S.ORIGINAL_FORMATS() else C.DISABLED(), Screen.ILLUST_SAVE, open)
         addMenuRow(features, activity, S.TASKS(), S.TASKS_HINT(), Screen.TASKS, open)
-        addMenuRow(features, activity, S.DRAWER(), drawerSlimSummary(), Screen.DRAWER_SLIM, open)
-        addMenuRow(features, activity, Slim.BOTTOM(), Slim.BOTTOM_HINT(), Screen.BOTTOM_SLIM, open)
-        addMenuRow(features, activity, Slim.MY_PAGE(), Slim.MY_PAGE_HINT(), Screen.MY_PAGE_SLIM, open)
+        addMenuRow(features, activity, Slim.TITLE(), SlimPanel.summary(), Screen.SLIM, open)
         body.addView(features)
 
         body.addView(UiKit.sectionTitle(activity, S.NETWORK_SECTION()))
@@ -346,12 +349,6 @@ object SettingsPanelBuilder {
                 }
             }
         ) { checked -> putConfig(ConfigKeys.TRANSLATE_ENABLED, checked) })
-        addRow(card, UiKit.switchRow(
-            activity,
-            S.DRAWER(),
-            S.DRAWER_TOGGLE_HINT(),
-            configValue(ConfigKeys.DRAWER_SLIM_ENABLED)
-        ) { checked -> putConfig(ConfigKeys.DRAWER_SLIM_ENABLED, checked) })
         card.addView(UiKit.divider(activity, 16, 16))
         card.addView(UiKit.paragraph(
             activity,
@@ -364,75 +361,6 @@ object SettingsPanelBuilder {
                 S.FEATURE_NOTE()
             )
         )
-    }
-
-    private fun buildDrawerSlimPage(activity: Activity, body: LinearLayout) {
-        val card = UiKit.card(activity)
-        addRow(card, UiKit.switchRow(
-            activity,
-            S.SLIM_ENABLE(),
-            S.SLIM_ENABLE_HINT(),
-            configValue(ConfigKeys.DRAWER_SLIM_ENABLED)
-        ) { checked -> putConfig(ConfigKeys.DRAWER_SLIM_ENABLED, checked) })
-        card.addView(UiKit.divider(activity, 16, 16))
-        card.addView(UiKit.paragraph(
-            activity,
-            S.SLIM_INSTRUCTIONS()
-        ))
-        body.addView(card)
-
-        val itemsCard = UiKit.card(activity)
-        itemsCard.addView(UiKit.cardSectionTitle(activity, S.SLIM_HIDE_TITLE()))
-        var added = false
-        for ((entryName, label) in com.heihun.pixivplus.feature.drawer.DrawerSlimFeature.DRAWER_ITEM_LABELS) {
-            if (added) itemsCard.addView(UiKit.divider(activity, 12, 12))
-            added = true
-            itemsCard.addView(UiKit.switchRow(
-                activity,
-                label(),
-                S.SLIM_HIDE_ITEM(),
-                drawerSlimItemHidden(entryName)
-            ) { checked ->
-                setDrawerSlimItemHidden(entryName, checked)
-            })
-        }
-        body.addView(itemsCard)
-        body.addView(UiKit.paragraph(
-            activity,
-            S.SLIM_GROUP_NOTE()
-        ))
-    }
-
-    private fun drawerSlimItemHidden(entryName: String): Boolean {
-        return ConfigStoreRegistry.store
-            .get(ConfigKeys.DRAWER_SLIM_ITEMS)
-            .split(",")
-            .map { it.trim() }
-            .contains(entryName)
-    }
-
-    private fun setDrawerSlimItemHidden(entryName: String, hidden: Boolean) {
-        val current = ConfigStoreRegistry.store
-            .get(ConfigKeys.DRAWER_SLIM_ITEMS)
-            .split(",")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .toMutableList()
-        if (hidden) {
-            if (!current.contains(entryName)) current.add(entryName)
-        } else {
-            current.remove(entryName)
-        }
-        ConfigStoreRegistry.store.put(ConfigKeys.DRAWER_SLIM_ITEMS, current.joinToString(","))
-    }
-
-    private fun drawerSlimSummary(): String {
-        val enabled = ConfigStoreRegistry.store.get(ConfigKeys.DRAWER_SLIM_ENABLED)
-        val hiddenCount = ConfigStoreRegistry.store
-            .get(ConfigKeys.DRAWER_SLIM_ITEMS)
-            .split(",")
-            .count { it.trim().isNotEmpty() }
-        return if (enabled) S.SLIM_ON_COUNT(hiddenCount) else S.SLIM_OFF_COUNT(hiddenCount)
     }
 
     private fun buildIllustSavePage(activity: Activity, body: LinearLayout) {
