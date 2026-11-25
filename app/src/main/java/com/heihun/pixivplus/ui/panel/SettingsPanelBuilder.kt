@@ -57,6 +57,7 @@ object SettingsPanelBuilder {
         CACHE(S.CACHE, S.CACHE_HINT),
         DRAWER_SLIM(S.DRAWER, S.DRAWER_HINT),
         BOTTOM_SLIM(Slim.BOTTOM, Slim.BOTTOM_HINT),
+        MY_PAGE_SLIM(Slim.MY_PAGE, Slim.MY_PAGE_HINT),
         PROXY(S.PROXY, S.PROXY_HINT),
         BACKUP(S.BACKUP, S.BACKUP_HINT),
         HISTORY(S.HISTORY, S.HISTORY_HINT),
@@ -199,6 +200,7 @@ object SettingsPanelBuilder {
             Screen.CACHE -> CachePanel.build(activity, body)
             Screen.DRAWER_SLIM -> buildDrawerSlimPage(activity, body)
             Screen.BOTTOM_SLIM -> BottomSlimPanel.build(activity, body)
+            Screen.MY_PAGE_SLIM -> MyPageSlimPanel.build(activity, body)
             Screen.PROXY -> {
                 val card = UiKit.card(activity)
                 body.addView(card)
@@ -243,6 +245,7 @@ object SettingsPanelBuilder {
         addMenuRow(features, activity, S.TASKS(), S.TASKS_HINT(), Screen.TASKS, open)
         addMenuRow(features, activity, S.DRAWER(), drawerSlimSummary(), Screen.DRAWER_SLIM, open)
         addMenuRow(features, activity, Slim.BOTTOM(), Slim.BOTTOM_HINT(), Screen.BOTTOM_SLIM, open)
+        addMenuRow(features, activity, Slim.MY_PAGE(), Slim.MY_PAGE_HINT(), Screen.MY_PAGE_SLIM, open)
         body.addView(features)
 
         body.addView(UiKit.sectionTitle(activity, S.NETWORK_SECTION()))

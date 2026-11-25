@@ -79,6 +79,8 @@ object ConfigKeys {
 
     val BOTTOM_SLIM_ENABLED = ConfigKey("bottom_slim_enabled", false, { it.toString() }, { it.toBoolean() })
     val BOTTOM_SLIM_ITEMS = ConfigKey("bottom_slim_items", "", { it }, { it })
+    val MY_PAGE_SLIM_ENABLED = ConfigKey("my_page_slim_enabled", false, { it.toString() }, { it.toBoolean() })
+    val MY_PAGE_SLIM_ITEMS = ConfigKey("my_page_slim_items", "", { it }, { it })
 
     /** 精简模式下隐藏的侧边栏菜单项资源名（drawer_menu_*），逗号分隔。 */
     val DRAWER_SLIM_ITEMS = ConfigKey(

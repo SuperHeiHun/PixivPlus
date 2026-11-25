@@ -592,6 +592,11 @@
     "slim.items": "Entries to hide",
     "slim.hide": "Hide while simplification is enabled",
     "slim.keep_one": "Keep at least one bottom navigation entry.",
-    "slim.bottom_help": "Disabled by default. Home, Search, Following new works, Notifications and My page can be hidden individually. At least one entry is kept, including after restoring incompatible settings. Hiding the selected tab switches to an available entry. This does not remove pages or change sidebar settings."
+    "slim.bottom_help": "Disabled by default. Home, Search, Following new works, Notifications and My page can be hidden individually. At least one entry is kept, including after restoring incompatible settings. Hiding the selected tab switches to an available entry. This does not remove pages or change sidebar settings.",
+    "slim.my_page": "Simplify My page",
+    "slim.my_page_hint": "Hide entries on My page opened from the main bottom navigation, not user profile pages.",
+    "slim.my_page_help": "Disabled by default, with no entries hidden initially. Account information, View profile and Settings remain available. Choose rows, the Premium button or Upload button to hide. After changing options, leave My page and enter it again; restarting Pixiv may be needed if the page is retained. Section headings and spacing may remain. Only the Pixiv 6.192.1 Compose mapping is currently supported; unknown versions keep the original page. Sidebar and user profile pages are unchanged.",
+    "slim.premium": "Premium membership button",
+    "slim.upload": "Upload work button"
   }
 }
