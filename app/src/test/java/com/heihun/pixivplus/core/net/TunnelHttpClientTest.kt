@@ -18,6 +18,35 @@ import kotlin.concurrent.thread
 class TunnelHttpClientTest {
 
     @Test
+    fun `authenticated settings requests can refuse redirects`() {
+        val server = OneShotServer { socket ->
+            readHead(socket.getInputStream())
+            socket.getOutputStream().apply {
+                write(("HTTP/1.1 302 Found\r\nLocation: http://other.invalid/login\r\n" +
+                    "Content-Length: 0\r\nConnection: close\r\n\r\n").toByteArray(Charsets.US_ASCII))
+                flush()
+            }
+        }
+        try {
+            val response = TunnelHttpClient.request(
+                spec = ProxySpec(ProxyMode.HTTP, "127.0.0.1", server.port),
+                method = "GET",
+                url = URL("http://example.test/settings/viewing"),
+                headers = mapOf("Cookie" to "PHPSESSID=test-session"),
+                body = null,
+                maxBodyChars = 4096,
+                connectTimeoutMs = 5000,
+                readTimeoutMs = 5000,
+                followRedirects = false
+            )
+            server.await()
+            assertEquals(302, response?.code)
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test
     fun `http proxy sends basic auth in absolute form request`() {
         val captured = AtomicReference<String>()
         val server = OneShotServer { socket ->

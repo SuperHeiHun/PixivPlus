@@ -29,6 +29,7 @@ import com.heihun.pixivplus.core.i18n.I18n
 import com.heihun.pixivplus.core.i18n.LanguageText as L
 import com.heihun.pixivplus.core.i18n.SettingsText as S
 import com.heihun.pixivplus.core.i18n.Text
+import com.heihun.pixivplus.core.i18n.WebViewingText as W
 import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.net.FilterRules
 import com.heihun.pixivplus.core.net.ProxyMode
@@ -46,6 +47,7 @@ object SettingsPanelBuilder {
     enum class Screen(private val titleText: Text, private val subtitleText: Text) {
         MAIN(S.MODULE, S.HOME_SUBTITLE),
         LANGUAGE(S.LANGUAGE, S.LANGUAGE_HINT),
+        WEB_VIEWING(W.TITLE, W.HINT),
         FEATURES(S.FEATURES, S.FEATURES_HINT),
         FILTERS(S.FILTERS, S.FILTERS_HINT),
         NOVEL_SAVE(S.NOVEL_SAVE, S.NOVEL_SAVE_HINT),
@@ -182,6 +184,7 @@ object SettingsPanelBuilder {
         when (screen) {
             Screen.MAIN -> buildMainMenu(activity, body, open)
             Screen.LANGUAGE -> LanguagePanel.build(activity, body)
+            Screen.WEB_VIEWING -> WebViewingPanel.build(activity, body)
             Screen.FEATURES -> buildFeaturesPage(activity, body)
             Screen.FILTERS -> {
                 val card = UiKit.card(activity)
@@ -230,6 +233,7 @@ object SettingsPanelBuilder {
             open
         )
         addMenuRow(features, activity, S.FILTERS(), filterOverview(), Screen.FILTERS, open)
+        addMenuRow(features, activity, W.TITLE(), W.HINT(), Screen.WEB_VIEWING, open)
         addMenuRow(features, activity, S.HISTORY(), historySummary(), Screen.HISTORY, open)
         addMenuRow(features, activity, S.NOVEL_SAVE(), novelSaveSummary(), Screen.NOVEL_SAVE, open)
         addMenuRow(features, activity, S.ILLUST_SAVE(), if (configValue(ConfigKeys.ILLUST_SAVE_ENABLED)) S.ORIGINAL_FORMATS() else C.DISABLED(), Screen.ILLUST_SAVE, open)

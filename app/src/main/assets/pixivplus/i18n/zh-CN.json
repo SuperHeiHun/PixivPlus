@@ -567,6 +567,23 @@
     "settings.target_en": "English",
     "settings.target_ja": "日语",
     "settings.target_ko": "韩语",
-    "task.progress": "处理中… %1$d%%"
+    "task.progress": "处理中… %1$d%%",
+    "web_viewing.title": "Web 端 R-18 / R-18G 设置",
+    "web_viewing.hint": "读取并修改当前 Pixiv 网页账号的阅览限制。",
+    "web_viewing.help": "使用 Pixiv 内置 WebView 的登录会话，可能与 App 或外部浏览器账号不同。修改直接保存到该网页账号，不是本地过滤；登录 Cookie 和设置不进入备份。会话不可用时，请先通过 Pixiv 内置网页登录，再刷新。请求沿用模块代理。保存后，已打开的作品页面可能需要刷新。",
+    "web_viewing.r18": "显示 R-18 作品",
+    "web_viewing.r18g": "显示 R-18G 作品",
+    "web_viewing.dependency": "开启 R-18G 会同时开启 R-18；关闭 R-18 会同时关闭两项。依照 Pixiv 官方行为，开启年龄限制作品也可能同时开启敏感内容显示。",
+    "web_viewing.loading": "正在读取网页账号设置…",
+    "web_viewing.saving": "正在保存并验证网页账号设置…",
+    "web_viewing.saved": "网页账号设置已保存并验证。",
+    "web_viewing.refresh": "刷新账号设置",
+    "web_viewing.open_web": "打开官方网页设置",
+    "web_viewing.login": "Pixiv 网页未登录或会话已过期。请通过 Pixiv 内置网页登录后刷新；外部浏览器登录不会共享此会话。",
+    "web_viewing.age": "仅官方确认年满 18 岁的账号可以修改。未设置生日时请前往官方网页补充；模块不会绕过年龄限制。",
+    "web_viewing.failed": "无法读取或保存网页设置。请检查网络、模块代理及网页登录后刷新；尚未确认保存成功。",
+    "web_viewing.session": "网页会话或账号设置已变化，请先刷新再操作。",
+    "web_viewing.verify": "无法确认保存结果，账号设置可能已经改变；请刷新或前往官方网页确认后再操作。",
+    "web_viewing.account": "网页账号 UID"
   }
 }

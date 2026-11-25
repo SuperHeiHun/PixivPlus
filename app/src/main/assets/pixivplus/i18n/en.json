@@ -567,6 +567,23 @@
     "settings.target_en": "English",
     "settings.target_ja": "Japanese",
     "settings.target_ko": "Korean",
-    "task.progress": "Processing… %1$d%%"
+    "task.progress": "Processing… %1$d%%",
+    "web_viewing.title": "Web R-18 / R-18G settings",
+    "web_viewing.hint": "Read and update the current Pixiv web account's viewing restrictions.",
+    "web_viewing.help": "Uses Pixiv's WebView login session, which may differ from your app or browser account. Changes are saved to that web account, not a local filter. No login cookies or settings are backed up. If the session is unavailable, log in through Pixiv's in-app web page first, then refresh. Requests use the module proxy. Existing pages may need refreshing after saving.",
+    "web_viewing.r18": "Show R-18 works",
+    "web_viewing.r18g": "Show R-18G works",
+    "web_viewing.dependency": "Enabling R-18G also enables R-18; disabling R-18 disables both. Pixiv may also enable sensitive content when enabling age-restricted works.",
+    "web_viewing.loading": "Reading web account settings…",
+    "web_viewing.saving": "Saving and verifying web account settings…",
+    "web_viewing.saved": "Web account settings saved and verified.",
+    "web_viewing.refresh": "Refresh account settings",
+    "web_viewing.open_web": "Open official web settings",
+    "web_viewing.login": "Pixiv web login is missing or expired. Log in through Pixiv's in-app web page, then refresh. An external browser login does not share this session.",
+    "web_viewing.age": "Only accounts confirmed as 18 or older can change these options. Set your date of birth on the official website if it is missing; age restrictions are not bypassed.",
+    "web_viewing.failed": "Could not read or save web settings. Check the network, module proxy and web login, then refresh. No successful save has been confirmed.",
+    "web_viewing.session": "The web session or account settings changed. Refresh before trying again.",
+    "web_viewing.verify": "The save could not be verified. The account may already have changed; refresh or check the official website before trying again.",
+    "web_viewing.account": "Web account UID"
   }
 }

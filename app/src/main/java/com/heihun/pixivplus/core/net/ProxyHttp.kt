@@ -55,7 +55,8 @@ object ProxyHttp {
         body: ByteArray? = null,
         maxBodyChars: Int = 2 * 1024 * 1024,
         connectTimeoutMs: Int = 8000,
-        readTimeoutMs: Int = 12000
+        readTimeoutMs: Int = 12000,
+        followRedirects: Boolean = true
     ): ProxyResponse? {
         lastFailure.remove()
         val spec = effectiveSpec(store)
@@ -75,6 +76,7 @@ object ProxyHttp {
                     maxBodyChars = maxBodyChars,
                     connectTimeoutMs = connectTimeoutMs,
                     readTimeoutMs = readTimeoutMs,
+                    followRedirects = followRedirects,
                     onError = { error ->
                         lastFailure.set(error.message ?: error.javaClass.simpleName)
                     }

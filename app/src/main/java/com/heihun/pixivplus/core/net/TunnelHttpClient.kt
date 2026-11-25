@@ -66,7 +66,8 @@ internal object TunnelHttpClient {
         maxBodyChars: Int,
         connectTimeoutMs: Int,
         readTimeoutMs: Int,
-        onError: ((Throwable) -> Unit)? = null
+        onError: ((Throwable) -> Unit)? = null,
+        followRedirects: Boolean = true
     ): ProxyResponse? {
         var current = url
         var redirects = 0
@@ -92,7 +93,7 @@ internal object TunnelHttpClient {
                 return null
             }
             val location = response.location
-            if (method.equals("GET", true) &&
+            if (followRedirects && method.equals("GET", true) &&
                 response.code in 300..399 &&
                 !location.isNullOrBlank() &&
                 redirects < MAX_REDIRECTS
