@@ -18,4 +18,8 @@ internal object WebViewingText {
     val SESSION = Text("web_viewing.session")
     val VERIFY = Text("web_viewing.verify")
     val ACCOUNT = Text("web_viewing.account")
+    val RELOGIN = Text("web_viewing.relogin")
+    val LOGIN_HELP = Text("web_viewing.login_help")
+    val LOGIN_DONE = Text("web_viewing.login_done")
+    val LOGIN_BLOCKED = Text("web_viewing.login_blocked")
 }
