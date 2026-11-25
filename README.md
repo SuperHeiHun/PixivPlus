@@ -214,6 +214,17 @@ Android / iOS 版 Pixiv 为满足应用商店合规要求，会隐藏包含 URL 
 
 诊断页的 `src-…` 构建标识由源码、资源和主要构建配置的内容计算；相同输入保持不变，避免每次构建时间变化触发重复编译。该标识不代表构建时间或 APK 文件校验值，也不包含签名凭据；Debug/Release 可共享同一源码标识。
 
+Windows 本地开发推荐使用 `scripts/build.ps1`：固定 JDK17、独立输出目录、单 worker、Kotlin in-process，复用 Gradle daemon（空闲 10 分钟退出）。默认构建 Debug 并执行单元测试/lint；通过后自动安装到 `emulator-5554`，确认版本并仅重启 Pixiv，不修改 LSPosed DB。构建失败、测试失败或 lint 有错误时不安装。脚本互斥避免本脚本的并发构建；不要同时手动向同一输出目录运行 Gradle。
+
+```powershell
+.\scripts\build.ps1                         # 日常开发：Debug＋测试＋lint，随后安装
+.\scripts\build.ps1 -Full                   # 完整验收：额外构建 Release，随后安装 Debug
+.\scripts\build.ps1 -Full -Profile          # 额外生成 Gradle 任务耗时报告
+.\scripts\build.ps1 -NoInstall              # 只构建检查，不操作设备
+```
+
+日志默认 `build-latest.log`，可用 `-Log` 指定；JDK/SDK 自动探测，也可用 `-JavaHome` / `-SdkRoot` 指定。该流程不推送或发布，完整发布前仍需执行 `-Full`。
+
 ```bash
 ./gradlew assembleDebug      # 调试包 -> app/build-out/outputs/apk/debug/
 ./gradlew assembleRelease    # 发布包 -> app/build-out/outputs/apk/release/
