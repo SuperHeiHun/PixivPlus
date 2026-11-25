@@ -26,6 +26,7 @@ internal object WorkText {
     val TRANSLATE_NOVEL = Text("work.translate_novel")
     val SHOW_ORIGINAL = Text("work.show_original")
     val CAPTION_TRANSLATION = Text("work.caption_translation")
+    val CAPTION_LINK_OPEN_FAILED = Text("work.caption_link_open_failed")
     val NOVEL_TRANSLATION = Text("work.novel_translation")
     val CAPTION_NOT_READY = Text("work.caption_not_ready")
     val TRANSLATING = Text("work.translating")

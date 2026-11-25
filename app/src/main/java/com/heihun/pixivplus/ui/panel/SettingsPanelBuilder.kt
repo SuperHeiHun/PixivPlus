@@ -319,6 +319,12 @@ object SettingsPanelBuilder {
         ) { checked -> putConfig(ConfigKeys.CAPTION_FIX, checked) })
         addRow(card, UiKit.switchRow(
             activity,
+            S.CAPTION_LINKS(),
+            S.CAPTION_LINKS_HINT(),
+            configValue(ConfigKeys.CAPTION_LINKS_ENABLED)
+        ) { checked -> putConfig(ConfigKeys.CAPTION_LINKS_ENABLED, checked) })
+        addRow(card, UiKit.switchRow(
+            activity,
             S.NOVEL_SAVE(),
             S.NOVEL_SAVE_TOGGLE(),
             configValue(ConfigKeys.NOVEL_SAVE_ENABLED)

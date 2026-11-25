@@ -3,14 +3,7 @@ package com.heihun.pixivplus.feature.translate
 import android.app.Activity
 import android.app.Dialog
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.text.Html
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.TextPaint
-import android.text.method.LinkMovementMethod
-import android.text.style.ClickableSpan
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -27,7 +20,6 @@ import com.heihun.pixivplus.core.log.ModuleLog
 import com.heihun.pixivplus.core.net.PayloadProcessor
 import com.heihun.pixivplus.core.novel.NovelBlock
 import com.heihun.pixivplus.core.novel.NovelExtractor
-import com.heihun.pixivplus.core.translate.CaptionLinks
 import com.heihun.pixivplus.core.translate.NovelText
 import com.heihun.pixivplus.core.translate.NovelTranslation
 import com.heihun.pixivplus.core.translate.Translator
@@ -43,6 +35,7 @@ import com.heihun.pixivplus.core.util.ReflectUtil
 import com.heihun.pixivplus.feature.ConfigStoreRegistry
 import com.heihun.pixivplus.feature.ConfigurableFeature
 import com.heihun.pixivplus.ui.UiKit
+import com.heihun.pixivplus.ui.CaptionLinkifier
 import com.heihun.pixivplus.ui.theme.Md3
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -328,42 +321,8 @@ class TranslationFeature : ConfigurableFeature(
      * （点击优先 pixiv 深链在宿主内打开，失败退回浏览器打开网页地址）。
      */
     private fun applyCaptionLinks(textView: TextView) {
-        val text = textView.text?.toString() ?: return
-        val links = CaptionLinks.find(text)
-        if (links.isEmpty()) return
-        val spannable = SpannableString(text)
-        val context = textView.context
-        val color = Md3.colors(context).primary
-        for (link in links) {
-            spannable.setSpan(
-                object : ClickableSpan() {
-                    override fun onClick(widget: View) {
-                        openCaptionLink(context, link)
-                    }
-
-                    override fun updateDrawState(ds: TextPaint) {
-                        ds.color = color
-                        ds.isUnderlineText = false
-                    }
-                },
-                link.start,
-                link.end,
-                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
-        }
-        textView.text = spannable
-        textView.movementMethod = LinkMovementMethod.getInstance()
-    }
-
-    private fun openCaptionLink(context: Context, link: CaptionLinks.Link) {
-        for (url in listOf(link.deepLink, link.webUrl)) {
-            try {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                return
-            } catch (_: Throwable) {
-            }
-        }
-        ModuleLog.w(displayName, "open caption link failed: ${link.deepLink}")
+        CaptionLinkifier.apply(textView, enabled = ConfigStoreRegistry.store.get(ConfigKeys.CAPTION_LINKS_ENABLED),
+            color = Md3.colors(textView.context).primary, underline = false)
     }
 
     private class CaptionDialogHolder(

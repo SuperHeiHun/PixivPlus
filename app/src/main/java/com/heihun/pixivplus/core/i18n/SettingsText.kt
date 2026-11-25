@@ -49,6 +49,8 @@ internal object SettingsText {
     val REMOVE_ADS_HINT = Text("settings.remove_ads_hint")
     val CAPTION_FIX = Text("settings.caption_fix")
     val CAPTION_FIX_HINT = Text("settings.caption_fix_hint")
+    val CAPTION_LINKS = Text("settings.caption_links")
+    val CAPTION_LINKS_HINT = Text("settings.caption_links_hint")
     val NOVEL_SAVE_TOGGLE = Text("settings.novel_save_toggle")
     val ILLUST_SAVE_TOGGLE = Text("settings.illust_save_toggle")
     val TRANSLATE = Text("settings.translate")

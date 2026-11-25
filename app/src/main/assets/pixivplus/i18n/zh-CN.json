@@ -603,6 +603,9 @@
     "slim.summary": "已开启 %1$d / 3 项精简",
     "slim.tab_drawer": "侧边栏",
     "slim.tab_bottom": "底栏",
-    "slim.tab_my_page": "个人首页"
+    "slim.tab_my_page": "个人首页",
+    "settings.caption_links": "简介链接点击",
+    "settings.caption_links_hint": "让插画／小说简介及简介翻译弹窗中的链接和 Pixiv 引用可点击，独立于翻译与简介修复开关。",
+    "work.caption_link_open_failed": "无法打开此简介链接，可能未安装兼容的查看应用。"
   }
 }

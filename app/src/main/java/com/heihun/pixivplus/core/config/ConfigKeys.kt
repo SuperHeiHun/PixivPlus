@@ -23,6 +23,7 @@ object ConfigKeys {
     val ADS_REMOVAL = ConfigKey("ads_removal", true, { it.toString() }, { it.toBoolean() })
 
     val CAPTION_FIX = ConfigKey("caption_fix", true, { it.toString() }, { it.toBoolean() })
+    val CAPTION_LINKS_ENABLED = ConfigKey("caption_links_enabled", true, { it.toString() }, { it.toBoolean() })
 
     val PROXY_MODE = ConfigKey("proxy_mode", "system", { it }, { it })
 

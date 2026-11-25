@@ -603,6 +603,9 @@
     "slim.summary": "%1$d of 3 simplification options enabled",
     "slim.tab_drawer": "Sidebar",
     "slim.tab_bottom": "Bottom bar",
-    "slim.tab_my_page": "My page"
+    "slim.tab_my_page": "My page",
+    "settings.caption_links": "Clickable caption links",
+    "settings.caption_links_hint": "Make links and Pixiv references clickable in artwork/novel captions and caption translation dialogs. Independent of translation and caption restoration.",
+    "work.caption_link_open_failed": "Could not open this caption link. No compatible app may be installed."
   }
 }
